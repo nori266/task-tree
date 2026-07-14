@@ -262,7 +262,7 @@ export default function TaskTreeApp() {
     return () => ro.disconnect();
   }, []);
 
-  /* ----- fully-done subtrees (rendered as woody branches) ----- */
+  /* ----- fully-done subtrees (folded into twigs, links tinted green) ----- */
   const doneBranchIds = useMemo(() => {
     const ids = new Set();
     const allDone = (n) => n.status === "done" && n.children.every(allDone);
@@ -312,7 +312,11 @@ export default function TaskTreeApp() {
       const links = h.links().map((l) => {
         const s = pos.get(l.source), t = pos.get(l.target);
         const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2;
-        return { id: l.target.data.id, path: `M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}` };
+        return {
+          id: l.target.data.id,
+          inprogress: l.target.data.status === "inprogress",
+          path: `M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}`,
+        };
       });
       return { nodes, links };
     }
@@ -328,7 +332,11 @@ export default function TaskTreeApp() {
     const links = h.links().map((l) => {
       const s = pos.get(l.source), t = pos.get(l.target);
       const mx = (s.x + t.x) / 2;
-      return { id: l.target.data.id, path: `M${s.x},${s.y} C${mx},${s.y} ${mx},${t.y} ${t.x},${t.y}` };
+      return {
+        id: l.target.data.id,
+        inprogress: l.target.data.status === "inprogress",
+        path: `M${s.x},${s.y} C${mx},${s.y} ${mx},${t.y} ${t.x},${t.y}`,
+      };
     });
     return { nodes, links };
   }, [doc, layoutMode, size.w, size.h, doneBranchIds]);
@@ -556,7 +564,11 @@ export default function TaskTreeApp() {
           <svg width={size.w} height={size.h}>
             <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
               {layout.links.map((l) => (
-                <path key={l.id} d={l.path} className={`tt-link ${doneBranchIds.has(l.id) ? "wood" : ""}`} />
+                <path
+                  key={l.id}
+                  d={l.path}
+                  className={`tt-link ${doneBranchIds.has(l.id) ? "done" : ""} ${l.inprogress ? "active" : ""}`}
+                />
               ))}
               {layout.nodes.map((n) => {
                 const data = n.d.data;
@@ -773,6 +785,18 @@ export default function TaskTreeApp() {
                     {t.emoji} {t.label}
                   </button>
                 ))}
+              </div>
+            </div>
+
+            <div className="tt-field">
+              <span>Importance</span>
+              <div className="tt-types">
+                <button
+                  className={`tt-chip ${selected.important ? "on" : ""}`}
+                  onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { important: !selected.important }) }))}
+                >
+                  ★ Important
+                </button>
               </div>
             </div>
 
@@ -1006,8 +1030,10 @@ const CSS = `
   transform-box: fill-box; transform-origin: 50% 88%;
   animation: tt-sprout .55s cubic-bezier(.34,1.56,.64,1) both;
 }
-/* fully-done subtree → woody branch */
-.tt-link.wood { stroke: #8A7355; stroke-width: 2.2; }
+/* fully-done subtree: same weight as other branches, just greener */
+.tt-link.done { stroke: #9CBD9F; }
+/* branch feeding an in-progress task reads heavier and darker */
+.tt-link.active { stroke: #7E9184; stroke-width: 2.8; }
 .tt-twig { cursor: grab; }
 .tt-twig.dragging { opacity: .3; }
 .tt-twig-wood {
