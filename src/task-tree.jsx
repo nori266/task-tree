@@ -47,20 +47,30 @@ function stripStatus(title) {
   return null;
 }
 
-// Migrate docs saved by earlier versions (status "call" → type, missing type field).
+// **Bold** anywhere in a title marks the task important; returns the title
+// with the markers stripped, or null when there is no bold span.
+function stripBold(title) {
+  if (!/\*\*(.+?)\*\*/.test(title)) return null;
+  return title.replace(/\*\*(.+?)\*\*/g, "$1").trim();
+}
+
+// Migrate docs saved by earlier versions (status "call" → type, missing
+// type/important fields, literal ** markers left in stored titles).
 function migrateNodes(nodes) {
   return nodes.map((n) => {
-    let { status = null, type = null } = n;
+    let { title, status = null, type = null, important = false } = n;
     if (status === "call") { type = type ?? "call"; status = null; }
     if (status && !statusByKey[status]) status = null;
-    return { ...n, status, type, children: migrateNodes(n.children || []) };
+    const bolded = stripBold(title);
+    if (bolded !== null) { important = true; title = bolded || "Untitled"; }
+    return { ...n, title, status, type, important, children: migrateNodes(n.children || []) };
   });
 }
 
 let idCounter = 1;
 const nid = () => `n${Date.now().toString(36)}_${idCounter++}`;
-const newNode = (title = "New task", status = null, type = null) => ({
-  id: nid(), title, desc: "", status, type, children: [],
+const newNode = (title = "New task", status = null, type = null, important = false) => ({
+  id: nid(), title, desc: "", status, type, important, children: [],
 });
 
 /* ---------- markdown parsing / serializing ---------- */
@@ -77,12 +87,15 @@ function parseMarkdown(text) {
       let title = bullet[3].trim();
       let status = bullet[2] && bullet[2].toLowerCase() === "x" ? "done" : null;
       let type = null;
+      let important = false;
+      const bolded = stripBold(title);
+      if (bolded !== null) { important = true; title = bolded; }
       const ty = stripType(title);
       if (ty) { type = ty.key; title = ty.title; }
       const st = stripStatus(title);
       if (st) { status = st.key; title = st.title; }
       if (!title) title = "Untitled";
-      const node = newNode(title, status, type);
+      const node = newNode(title, status, type, important);
       while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
       if (stack.length) stack[stack.length - 1].node.children.push(node);
       else roots.push(node);
@@ -104,7 +117,7 @@ function toMarkdown(nodes, depth = 0) {
   for (const n of nodes) {
     const t = n.type && typeByKey[n.type] ? typeByKey[n.type].emoji + " " : "";
     const s = n.status && statusByKey[n.status] ? " " + statusByKey[n.status].emoji : "";
-    out += `${pad}- ${t}${n.title}${s}\n`;
+    out += `${pad}- ${t}${n.important ? `**${n.title}**` : n.title}${s}\n`;
     if (n.desc) for (const line of n.desc.split("\n")) out += `${pad}  > ${line}\n`;
     if (n.children?.length) out += toMarkdown(n.children, depth + 1);
   }
@@ -158,7 +171,7 @@ const SAMPLE_MD = `- Plan the garden 💻
     - ☎️ Ask neighbor which soil mix worked ❓
   - Order raised beds 🧱
     > Waiting for choices above.
-- Renew passport ⏳
+- **Renew passport** ⏳
   - ☎️ Call the office for an appointment
   - Print photos
 - 👩🏻‍💻 Automate the monthly report ⏭️
@@ -169,7 +182,7 @@ const SAMPLE_MD = `- Plan the garden 💻
 const PILL_H = 34;
 const labelOf = (t) => (t.length > 26 ? t.slice(0, 25) + "…" : t);
 const pillW = (n) =>
-  Math.max(64, 26 + labelOf(n.title).length * 7.0 + (n.type ? 24 : 0) + (n.status ? 22 : 0));
+  Math.max(64, 26 + labelOf(n.title).length * (n.important ? 7.6 : 7.0) + (n.type ? 24 : 0) + (n.status ? 22 : 0));
 
 // Deterministic pseudo-random in [-0.5, 0.5) seeded by node id, so the
 // organic jitter of done branches is stable across renders.
@@ -631,7 +644,7 @@ export default function TaskTreeApp() {
                     key={data.id}
                     data-node={data.id}
                     transform={`translate(${n.x - w / 2},${n.y - PILL_H / 2})`}
-                    className={`tt-pill ${isSel ? "sel" : ""} ${isDone ? "done" : ""} ${isLeaf ? "leaf" : ""} ${isDragging ? "dragging" : ""}`}
+                    className={`tt-pill ${isSel ? "sel" : ""} ${isDone ? "done" : ""} ${isLeaf ? "leaf" : ""} ${data.important ? "imp" : ""} ${isDragging ? "dragging" : ""}`}
                     {...nodeHandlers}
                   >
                     <rect width={w} height={PILL_H} rx={11} className="tt-pill-bg" />
@@ -668,7 +681,7 @@ export default function TaskTreeApp() {
                 const st = dn.status ? statusByKey[dn.status] : null;
                 return (
                   <g
-                    className="tt-ghost"
+                    className={`tt-ghost ${dn.important ? "imp" : ""}`}
                     style={{ pointerEvents: "none" }}
                     transform={`translate(${dragState.x - w / 2},${dragState.y - PILL_H / 2})`}
                   >
@@ -815,6 +828,8 @@ export default function TaskTreeApp() {
               ({STATUSES.map((s) => s.emoji).join(" ")}) are picked up; items without a
               status emoji stay status-free. <code>- [x]</code> counts as done; lines
               starting with <code>&gt;</code> become the description of the item above.
+              Titles written in <code>**bold**</code> are marked important and shown
+              highlighted in the tree.
             </p>
             <textarea
               rows={12}
@@ -851,7 +866,7 @@ export default function TaskTreeApp() {
 /* ────────────────── styles ────────────────── */
 
 const CSS = `
-@import url('https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&family=Newsreader:ital,opsz,wght@1,6..72,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@1,6..72,400&display=swap');
 
 .tt-root {
   --bg: #ECEFEA;
@@ -962,6 +977,13 @@ const CSS = `
   font-size: 12.5px; font-weight: 500; fill: var(--ink);
   font-family: inherit;
 }
+/* important (**bold** in imported md): bold label, brighter pill */
+.tt-pill.imp .tt-pill-title, .tt-ghost.imp .tt-pill-title { font-weight: 700; }
+.tt-pill.imp .tt-pill-bg {
+  fill: #FBFEF3; stroke: #AECBA9;
+  filter: drop-shadow(0 2px 6px rgba(79,131,107,.22));
+}
+.tt-pill.imp:hover .tt-pill-bg { stroke: #8FB68F; }
 .tt-pill.done .tt-pill-bg { fill: #F1F4EF; }
 .tt-pill.done .tt-pill-title { fill: #9AA79E; text-decoration: line-through; }
 .tt-pill.done .tt-pill-emoji { opacity: .75; }
