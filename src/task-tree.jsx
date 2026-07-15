@@ -320,11 +320,12 @@ export default function TaskTreeApp() {
       });
       return { nodes, links };
     }
-    // horizontal tidy tree, sized to the container's aspect
+    // horizontal tidy tree: width follows the container, but rows are laid
+    // out at a fixed vertical pitch so leaves never overlap no matter how
+    // many there are — fitView then scales the taller tree to the screen
     const W = Math.max(560, size.w - 200);
-    const H = Math.max(380, size.h - 120);
     d3.tree()
-      .size([H, W])
+      .nodeSize([PILL_H + 14, W / Math.max(1, h.height)])
       .separation((a, b) => (a.parent === b.parent ? 1 : 1.35))(h);
     const nodes = h.descendants().map((d) => ({ d, x: d.y, y: d.x }));
     naturalize(nodes);
