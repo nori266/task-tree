@@ -4,7 +4,7 @@ import {
   countNodes, countDone,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
-import { PILL_H, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
+import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
 import {
   RootHub, TaskPill, DoneLeaf, DoneTwig, DragGhost, Butterflies, makeFlock,
 } from "./nodes.jsx";
@@ -22,6 +22,7 @@ const CELEBRATE_MIN_SUBNODES = 10;
 export default function TaskTreeApp() {
   const [doc, setDoc] = useState(null); // {title, children}
   const [selectedId, setSelectedId] = useState(null);
+  const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
   const [layoutMode, setLayoutMode] = useState("horizontal"); // horizontal | radial
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [modal, setModal] = useState(null); // 'import' | 'export' | null
@@ -122,10 +123,19 @@ export default function TaskTreeApp() {
 
   useEffect(() => () => clearTimeout(celebrationTimer.current), []);
 
+  /* ----- focus mode: only the focused node and its subtree are laid out, so
+         the branch occupies the full screen; the hub still adds/reparents
+         into the focused node so nothing lands outside the visible view ----- */
+  const focus = doc && focusId ? findNode(doc.children, focusId) : null;
+  const viewDoc = useMemo(
+    () => (focus ? { title: doc.title, children: [focus] } : doc),
+    [doc, focus]
+  );
+
   /* ----- layout ----- */
   const layout = useMemo(
-    () => computeLayout(doc, layoutMode, size, doneBranchIds),
-    [doc, layoutMode, size, doneBranchIds]
+    () => computeLayout(viewDoc, layoutMode, size, doneBranchIds),
+    [viewDoc, layoutMode, size, doneBranchIds]
   );
 
   /* ----- fit view ----- */
@@ -151,7 +161,7 @@ export default function TaskTreeApp() {
     });
   }, [layout, size]);
 
-  useEffect(() => { fitView(); }, [structureRev, layoutMode, size.w, size.h]); // eslint-disable-line
+  useEffect(() => { fitView(); }, [structureRev, layoutMode, size.w, size.h, focusId]); // eslint-disable-line
 
   /* ----- pan & zoom ----- */
   useEffect(() => {
@@ -199,7 +209,7 @@ export default function TaskTreeApp() {
     );
     setSelectedId(child.id);
     setConfirmDelete(false);
-    bumpStructure();
+    // no bumpStructure(): adding a sub-task must not re-fit the view
     setTimeout(() => {
       titleInputRef.current?.focus();
       titleInputRef.current?.select();
@@ -207,6 +217,7 @@ export default function TaskTreeApp() {
   };
 
   const handleDelete = (id) => {
+    if (id === focusId) setFocusId(null);
     setDoc((d) => ({ ...d, children: removeNode(d.children, id) }));
     setSelectedId(null);
     setConfirmDelete(false);
@@ -268,12 +279,14 @@ export default function TaskTreeApp() {
   };
 
   const handleReparent = (nodeId, targetId) => {
+    // in focus mode the hub stands in for the focused node
+    const realTarget = targetId === "__root" && focusId ? focusId : targetId;
     setDoc((d) => {
       const subtree = findNode(d.children, nodeId);
-      if (!subtree || nodeId === targetId) return d;
+      if (!subtree || nodeId === realTarget) return d;
       const rest = removeNode(d.children, nodeId);
       const children =
-        targetId === "__root" ? [...rest, subtree] : addChild(rest, targetId, subtree);
+        realTarget === "__root" ? [...rest, subtree] : addChild(rest, realTarget, subtree);
       return { ...d, children };
     });
     bumpStructure();
@@ -317,12 +330,28 @@ export default function TaskTreeApp() {
           <span className="tt-brand-name">Task Tree</span>
           <span className="tt-progress">
             {done}/{total} done
+            {focus && <em> · ◉ {labelOf(focus.title)}</em>}
             {saveState === "saving" && <em> · saving…</em>}
             {saveState === "saved" && <em> · saved</em>}
             {saveState === "error" && <em className="err"> · couldn't save</em>}
           </span>
         </div>
         <div className="tt-actions">
+          {(selectedId || focusId) && (
+            <button
+              className="tt-btn ghost"
+              onClick={() =>
+                setFocusId(selectedId && selectedId !== focusId ? selectedId : null)
+              }
+              title={
+                selectedId && selectedId !== focusId
+                  ? "Show only this task's subtasks, full screen"
+                  : "Show the whole tree again"
+              }
+            >
+              {selectedId && selectedId !== focusId ? "◉ Focus" : "⊙ Show all"}
+            </button>
+          )}
           <button
             className="tt-btn ghost"
             onClick={() => setLayoutMode((m) => (m === "horizontal" ? "radial" : "horizontal"))}
@@ -364,7 +393,8 @@ export default function TaskTreeApp() {
                       x={n.x}
                       y={n.y}
                       isDrop={dragState?.over === "__root"}
-                      onAdd={() => { setSelectedId(null); handleAddChild("__root"); }}
+                      onAdd={() => { setSelectedId(null); handleAddChild(focusId ?? "__root"); }}
+                      label={focus ? `${focus.title} — add a sub-task` : undefined}
                     />
                   );
                 }

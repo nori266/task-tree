@@ -4,7 +4,7 @@ import { PILL_H, labelOf, pillW } from "./layout.js";
 /* Stateless SVG renderers for everything drawn on the canvas. `handlers` is
    the pointer/click bundle built once per node in TaskTreeApp. */
 
-export function RootHub({ x, y, isDrop, onAdd }) {
+export function RootHub({ x, y, isDrop, onAdd, label = "Add a top-level task" }) {
   return (
     <g
       data-node="root"
@@ -15,7 +15,7 @@ export function RootHub({ x, y, isDrop, onAdd }) {
     >
       <circle r={17} />
       <text y={1} textAnchor="middle" dominantBaseline="middle" className="tt-hub-emoji">🌳</text>
-      <title>Add a top-level task</title>
+      <title>{label}</title>
     </g>
   );
 }
