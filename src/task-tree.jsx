@@ -184,6 +184,11 @@ const labelOf = (t) => (t.length > 26 ? t.slice(0, 25) + "…" : t);
 const pillW = (n) =>
   Math.max(64, 26 + labelOf(n.title).length * (n.important ? 7.6 : 7.0) + (n.type ? 24 : 0) + (n.status ? 22 : 0));
 
+// Butterfly wing, drawn to the left of the body; the right wing mirrors it.
+const WING_D = "M0,-1 C-8,-9 -13,-3 -6,-.5 C-12,2 -8,8 0,3 Z";
+const WING_COLORS = ["#E8A94F", "#D98A66", "#8A6FA6", "#7FAE93", "#D9789B"];
+const CELEBRATE_MIN_SUBNODES = 10;
+
 // Deterministic pseudo-random in [-0.5, 0.5) seeded by node id, so the
 // organic jitter of done branches is stable across renders.
 function jitter(id, salt = 0) {
@@ -213,7 +218,10 @@ export default function TaskTreeApp() {
   const drag = useRef(null);
   const nodeDrag = useRef(null); // pointer bookkeeping for drag-to-reparent
   const [dragState, setDragState] = useState(null); // {id, x, y, over} while dragging a node
+  const [celebration, setCelebration] = useState(null); // {id, key, flock} butterflies over a freshly finished big branch
   const loaded = useRef(false);
+  const prevBigDone = useRef(null); // ids of big fully-done branches on the previous doc
+  const celebrationTimer = useRef(null);
 
   /* ----- load ----- */
   useEffect(() => {
@@ -274,6 +282,44 @@ export default function TaskTreeApp() {
     doc?.children.forEach(walk);
     return ids;
   }, [doc]);
+
+  /* ----- butterflies when a big branch (>= CELEBRATE_MIN_SUBNODES subnodes)
+         becomes fully done, itself included ----- */
+  useEffect(() => {
+    if (!doc) return;
+    const allDone = (n) => n.status === "done" && n.children.every(allDone);
+    const big = [];
+    const walk = (n) => {
+      if (countNodes(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)) big.push(n);
+      n.children.forEach(walk);
+    };
+    doc.children.forEach(walk);
+    const prev = prevBigDone.current;
+    prevBigDone.current = new Set(big.map((n) => n.id));
+    if (!prev) return; // first doc after load — nothing was just completed
+    const fresh = big.filter((n) => !prev.has(n.id));
+    if (!fresh.length) return;
+    // If completing one task finished several nested big branches, celebrate the largest.
+    const star = fresh.reduce((a, b) => (countNodes(b.children) > countNodes(a.children) ? b : a));
+    const count = Math.min(18, 8 + Math.floor(countNodes(star.children) / 3));
+    const flock = Array.from({ length: count }, (_, i) => {
+      const a = -Math.PI * (0.12 + 0.76 * Math.random()); // upward fan
+      const dist = 90 + Math.random() * 110;
+      return {
+        tx: Math.cos(a) * dist,
+        ty: Math.sin(a) * dist - 20,
+        dur: 2.2 + Math.random() * 1.6,
+        delay: Math.random() * 0.7,
+        rot: -25 + Math.random() * 50,
+        color: WING_COLORS[i % WING_COLORS.length],
+      };
+    });
+    clearTimeout(celebrationTimer.current);
+    setCelebration({ id: star.id, key: Date.now(), flock });
+    celebrationTimer.current = setTimeout(() => setCelebration(null), 4600);
+  }, [doc]);
+
+  useEffect(() => () => clearTimeout(celebrationTimer.current), []);
 
   /* ----- layout ----- */
   const layout = useMemo(() => {
@@ -711,6 +757,31 @@ export default function TaskTreeApp() {
                   </g>
                 );
               })()}
+              {celebration && (() => {
+                const n = layout.nodes.find((m) => m.d.depth > 0 && m.d.data.id === celebration.id);
+                if (!n) return null;
+                return (
+                  <g key={celebration.key} className="tt-bflock" transform={`translate(${n.x},${n.y})`}>
+                    {celebration.flock.map((b, i) => (
+                      <g
+                        key={i}
+                        className="tt-bfly"
+                        style={{ "--tx": `${b.tx}px`, "--ty": `${b.ty}px`, animationDuration: `${b.dur}s`, animationDelay: `${b.delay}s` }}
+                      >
+                        <g className="tt-bfly-sway" style={{ animationDelay: `${-i * 0.13}s` }}>
+                          <g transform={`rotate(${b.rot})`}>
+                            <path className="tt-bfly-wing" d={WING_D} fill={b.color} style={{ animationDelay: `${-i * 0.05}s` }} />
+                            <g transform="scale(-1,1)">
+                              <path className="tt-bfly-wing" d={WING_D} fill={b.color} style={{ animationDelay: `${-i * 0.05}s` }} />
+                            </g>
+                            <ellipse rx={1.3} ry={4.6} className="tt-bfly-body" />
+                          </g>
+                        </g>
+                      </g>
+                    ))}
+                  </g>
+                );
+              })()}
             </g>
           </svg>
         </div>
@@ -1056,6 +1127,29 @@ const CSS = `
   60% { transform: scale(1.15) rotate(8deg); opacity: 1; }
   to { transform: scale(1) rotate(0deg); opacity: 1; }
 }
+
+/* butterflies over a big branch that just became fully done */
+.tt-bflock { pointer-events: none; }
+.tt-bfly { animation: tt-bfly-fly ease-out both; }
+@keyframes tt-bfly-fly {
+  0% { transform: translate(0,0) scale(.3); opacity: 0; }
+  10% { opacity: 1; }
+  15% { transform: translate(calc(var(--tx)*.18), calc(var(--ty)*.18)) scale(1); }
+  80% { opacity: .9; }
+  100% { transform: translate(var(--tx), var(--ty)) scale(.85); opacity: 0; }
+}
+.tt-bfly-sway { animation: tt-bfly-sway .7s ease-in-out infinite alternate; }
+@keyframes tt-bfly-sway {
+  from { transform: translateX(-5px) rotate(-9deg); }
+  to { transform: translateX(5px) rotate(9deg); }
+}
+.tt-bfly-wing {
+  stroke: rgba(51,64,58,.35); stroke-width: .6;
+  transform-box: fill-box; transform-origin: 100% 50%;
+  animation: tt-bfly-flap .16s ease-in-out infinite alternate;
+}
+@keyframes tt-bfly-flap { from { transform: scaleX(1); } to { transform: scaleX(.2); } }
+.tt-bfly-body { fill: #5B4A3A; }
 
 /* legend */
 .tt-legend {
