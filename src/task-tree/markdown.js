@@ -56,7 +56,8 @@ export function parseMarkdown(text) {
   let last = null;
   for (const raw of text.split("\n")) {
     if (!raw.trim()) continue;
-    const bullet = raw.match(/^([ \t]*)[-*+]\s+(?:\[([ xX])\]\s*)?(.*)$/);
+    // bullets (- * +) and numbered items (1. / 1)) are interchangeable
+    const bullet = raw.match(/^([ \t]*)(?:[-*+]|\d+[.)])\s+(?:\[([ xX])\]\s*)?(.*)$/);
     if (bullet) {
       const indent = bullet[1].replace(/\t/g, "  ").length;
       let title = bullet[3].trim();

@@ -7,7 +7,8 @@ export function ImportModal({ text, setText, onImport, onClose }) {
       <div className="tt-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Import markdown</h3>
         <p className="tt-note">
-          Nested bullets become branches. A type emoji at the start of an item
+          Nested bullets become branches; numbered items (<code>1.</code>) work
+          the same as bullets and can be mixed with them. A type emoji at the start of an item
           ({TYPES.map((t) => t.emoji).join(" ")}) and a status emoji at its end
           ({STATUSES.map((s) => s.emoji).join(" ")}) are picked up; items without a
           status emoji stay status-free. <code>- [x]</code> counts as done; lines
