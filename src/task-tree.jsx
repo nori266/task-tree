@@ -326,19 +326,22 @@ export default function TaskTreeApp() {
     if (!doc) return { nodes: [], links: [] };
     const rootData = { id: "__root", title: doc.title, children: doc.children };
     const h = d3.hierarchy(rootData, (d) => d.children);
-    // Nudge nodes of finished subtrees off the tidy grid — varying edge
-    // lengths (and a little sideways drift) so the branch reads organic.
+    // Nudge every node off the tidy grid — varying edge lengths so siblings
+    // don't line up in rigid columns. Finished subtrees also drift sideways
+    // more, so those branches read fully organic; live nodes stay close to
+    // their row to keep the tree readable.
     const naturalize = (nodes) => {
       const byD = new Map(nodes.map((n) => [n.d, n]));
       for (const n of nodes) {
-        if (n.d.depth === 0 || !doneBranchIds.has(n.d.data.id)) continue;
+        if (n.d.depth === 0) continue;
         const p = byD.get(n.d.parent);
         if (!p) continue;
         let dx = n.x - p.x, dy = n.y - p.y;
         const len = Math.hypot(dx, dy) || 1;
         dx /= len; dy /= len;
+        const done = doneBranchIds.has(n.d.data.id);
         const along = jitter(n.d.data.id) * 48;
-        const side = jitter(n.d.data.id, 7) * 24;
+        const side = jitter(n.d.data.id, 7) * (done ? 24 : 10);
         n.x += dx * along - dy * side;
         n.y += dy * along + dx * side;
       }
@@ -1111,10 +1114,10 @@ const CSS = `
 .tt-twig { cursor: grab; }
 .tt-twig.dragging { opacity: .3; }
 .tt-twig-wood {
-  fill: none; stroke: #7A6248; stroke-width: 2; stroke-linecap: round;
+  fill: none; stroke: #9CBD9F; stroke-width: 2; stroke-linecap: round;
   transition: stroke .18s ease;
 }
-.tt-twig:hover .tt-twig-wood { stroke: #93795B; }
+.tt-twig:hover .tt-twig-wood { stroke: #7FA383; }
 .tt-twig-leaf { fill: #7FAE93; stroke: #4F836B; stroke-width: .9; }
 .tt-twig-inner {
   transform-box: fill-box; transform-origin: 0% 50%;
