@@ -819,79 +819,81 @@ export default function TaskTreeApp() {
               <button className="tt-x" onClick={() => setSelectedId(null)} aria-label="Close panel">×</button>
             </div>
 
-            <label className="tt-field">
-              <span>Title</span>
-              <input
-                ref={titleInputRef}
-                value={selected.title}
-                onChange={(e) => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { title: e.target.value }) }))}
-                onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-              />
-            </label>
+            <div className="tt-panel-body">
+              <label className="tt-field">
+                <span>Title</span>
+                <input
+                  ref={titleInputRef}
+                  value={selected.title}
+                  onChange={(e) => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { title: e.target.value }) }))}
+                  onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                />
+              </label>
 
-            <label className="tt-field">
-              <span>Description</span>
-              <textarea
-                rows={4}
-                placeholder="Notes, links, context…"
-                value={selected.desc}
-                onChange={(e) => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { desc: e.target.value }) }))}
-              />
-            </label>
+              <label className="tt-field">
+                <span>Description</span>
+                <textarea
+                  rows={2}
+                  placeholder="Notes, links, context…"
+                  value={selected.desc}
+                  onChange={(e) => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { desc: e.target.value }) }))}
+                />
+              </label>
 
-            <div className="tt-field">
-              <span>Type</span>
-              <div className="tt-types">
-                <button
-                  className={`tt-chip ${!selected.type ? "on" : ""}`}
-                  onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { type: null }) }))}
-                >
-                  — None
-                </button>
-                {TYPES.map((t) => (
+              <div className="tt-field">
+                <span>Type</span>
+                <div className="tt-types">
                   <button
-                    key={t.key}
-                    className={`tt-chip ${selected.type === t.key ? "on" : ""}`}
-                    onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { type: t.key }) }))}
+                    className={`tt-chip ${!selected.type ? "on" : ""}`}
+                    onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { type: null }) }))}
                   >
-                    {t.emoji} {t.label}
+                    — None
                   </button>
-                ))}
+                  {TYPES.map((t) => (
+                    <button
+                      key={t.key}
+                      className={`tt-chip ${selected.type === t.key ? "on" : ""}`}
+                      onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { type: t.key }) }))}
+                    >
+                      {t.emoji} {t.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
 
-            <div className="tt-field">
-              <span>Importance</span>
-              <div className="tt-types">
-                <button
-                  className={`tt-chip ${selected.important ? "on" : ""}`}
-                  onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { important: !selected.important }) }))}
-                >
-                  ★ Important
-                </button>
-              </div>
-            </div>
-
-            <div className="tt-field">
-              <span>Status</span>
-              <div className="tt-statuses">
-                <button
-                  className={`tt-status ${!selected.status ? "on" : ""}`}
-                  style={{ "--sc": "#9AA79E" }}
-                  onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { status: null }) }))}
-                >
-                  <b>—</b>No status
-                </button>
-                {STATUSES.map((s) => (
+              <div className="tt-field">
+                <span>Importance</span>
+                <div className="tt-types">
                   <button
-                    key={s.key}
-                    className={`tt-status ${selected.status === s.key ? "on" : ""}`}
-                    style={{ "--sc": s.color }}
-                    onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { status: s.key }) }))}
+                    className={`tt-chip ${selected.important ? "on" : ""}`}
+                    onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { important: !selected.important }) }))}
                   >
-                    <b>{s.emoji}</b>{s.label}
+                    ★ Important
                   </button>
-                ))}
+                </div>
+              </div>
+
+              <div className="tt-field">
+                <span>Status</span>
+                <div className="tt-statuses">
+                  <button
+                    className={`tt-status ${!selected.status ? "on" : ""}`}
+                    style={{ "--sc": "#9AA79E" }}
+                    onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { status: null }) }))}
+                  >
+                    <b>—</b>No status
+                  </button>
+                  {STATUSES.map((s) => (
+                    <button
+                      key={s.key}
+                      className={`tt-status ${selected.status === s.key ? "on" : ""}`}
+                      style={{ "--sc": s.color }}
+                      onClick={() => setDoc((d) => ({ ...d, children: updateNode(d.children, selected.id, { status: s.key }) }))}
+                    >
+                      <b>{s.emoji}</b>{s.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
 
@@ -1177,7 +1179,7 @@ const CSS = `
 .tt-panel {
   position: absolute; top: 54px; right: 0; bottom: 0; width: 320px;
   background: var(--panel); border-left: 1px solid #E0E7DE;
-  padding: 16px; overflow-y: auto;
+  padding: 16px;
   transform: translateX(105%);
   transition: transform .32s cubic-bezier(.3,.8,.3,1);
   z-index: 6; display: flex; flex-direction: column; gap: 14px;
@@ -1194,6 +1196,13 @@ const CSS = `
   .tt-panel.open { transform: translateY(0); }
 }
 .tt-panel-head { display: flex; align-items: center; justify-content: space-between; }
+/* only the fields scroll; the footer buttons stay pinned and reachable.
+   the tiny negative margin keeps focus rings from being clipped at the edges */
+.tt-panel-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 14px;
+  margin: -3px; padding: 3px;
+}
 .tt-panel-eyebrow {
   font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
   color: var(--muted); font-weight: 600;
@@ -1216,7 +1225,7 @@ const CSS = `
   box-shadow: 0 0 0 3px rgba(79,131,107,.14);
 }
 
-.tt-statuses { display: flex; flex-direction: column; gap: 5px; }
+.tt-statuses { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
 .tt-types { display: flex; gap: 6px; flex-wrap: wrap; }
 .tt-chip {
   border: 1px solid #DDE4DB; border-radius: 9px; padding: 7px 11px;
@@ -1231,12 +1240,13 @@ const CSS = `
 }
 .tt-leg-label.sep { margin-left: 8px; }
 .tt-status {
-  display: flex; align-items: center; gap: 9px;
-  border: 1px solid #DDE4DB; border-radius: 9px; padding: 7px 10px;
+  display: flex; align-items: center; gap: 6px;
+  border: 1px solid #DDE4DB; border-radius: 9px; padding: 6px 8px;
   background: #FDFEFC; color: var(--ink); text-align: left;
+  font-size: 12.5px; line-height: 1.25;
   transition: border-color .15s ease, background .15s ease;
 }
-.tt-status b { font-weight: 400; width: 20px; text-align: center; }
+.tt-status b { font-weight: 400; width: 18px; text-align: center; flex: none; }
 .tt-status:hover { border-color: var(--sc); }
 .tt-status.on {
   border-color: var(--sc);
@@ -1244,7 +1254,10 @@ const CSS = `
   box-shadow: inset 3px 0 0 var(--sc);
 }
 
-.tt-panel-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding-top: 6px; }
+.tt-panel-foot {
+  display: flex; flex-direction: column; gap: 8px;
+  padding-top: 10px; border-top: 1px solid #E0E7DE;
+}
 
 /* modal */
 .tt-scrim {
