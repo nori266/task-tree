@@ -1,7 +1,7 @@
 import * as d3 from "d3";
 
 /* Pure layout math: node sizing, done-branch detection, and the d3 tidy-tree
-   placement (horizontal or radial) with organic jitter applied on top. */
+   placement (horizontal) with organic jitter applied on top. */
 
 export const PILL_H = 34;
 export const labelOf = (t) => (t.length > 26 ? t.slice(0, 25) + "…" : t);
@@ -30,7 +30,7 @@ export function computeDoneBranchIds(children) {
   return ids;
 }
 
-export function computeLayout(doc, layoutMode, size, doneBranchIds) {
+export function computeLayout(doc, size, doneBranchIds) {
   if (!doc) return { nodes: [], links: [] };
   const rootData = { id: "__root", title: doc.title, children: doc.children };
   const h = d3.hierarchy(rootData, (d) => d.children);
@@ -54,29 +54,6 @@ export function computeLayout(doc, layoutMode, size, doneBranchIds) {
       n.y += dy * along + dx * side;
     }
   };
-  if (layoutMode === "radial") {
-    const R = Math.max(240, Math.min(size.w, size.h) / 2 - 60);
-    d3.tree()
-      .size([2 * Math.PI, R])
-      .separation((a, b) => ((a.parent === b.parent ? 1 : 1.6) / Math.max(a.depth, 1)))(h);
-    const nodes = h.descendants().map((d) => ({
-      d,
-      x: d.depth === 0 ? 0 : d.y * Math.cos(d.x - Math.PI / 2),
-      y: d.depth === 0 ? 0 : d.y * Math.sin(d.x - Math.PI / 2),
-    }));
-    naturalize(nodes);
-    const pos = new Map(nodes.map((n) => [n.d, n]));
-    const links = h.links().map((l) => {
-      const s = pos.get(l.source), t = pos.get(l.target);
-      const mx = (s.x + t.x) / 2, my = (s.y + t.y) / 2;
-      return {
-        id: l.target.data.id,
-        inprogress: l.target.data.status === "inprogress",
-        path: `M${s.x},${s.y} Q${mx},${my} ${t.x},${t.y}`,
-      };
-    });
-    return { nodes, links };
-  }
   // horizontal tidy tree: width follows the container, but rows are laid
   // out at a fixed vertical pitch so leaves never overlap no matter how
   // many there are — fitView then scales the taller tree to the screen

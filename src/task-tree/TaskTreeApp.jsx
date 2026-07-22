@@ -27,7 +27,6 @@ export default function TaskTreeApp() {
   const [planted, setPlanted] = useState(null); // {trees, key} undo toast
   const [selectedId, setSelectedId] = useState(null);
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
-  const [layoutMode, setLayoutMode] = useState("horizontal"); // horizontal | radial
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [modal, setModal] = useState(null); // 'import' | 'export' | null
   const [importText, setImportText] = useState("");
@@ -217,8 +216,8 @@ export default function TaskTreeApp() {
 
   /* ----- layout ----- */
   const layout = useMemo(
-    () => computeLayout(viewDoc, layoutMode, size, doneBranchIds),
-    [viewDoc, layoutMode, size, doneBranchIds]
+    () => computeLayout(viewDoc, size, doneBranchIds),
+    [viewDoc, size, doneBranchIds]
   );
 
   /* ----- fit view ----- */
@@ -244,7 +243,7 @@ export default function TaskTreeApp() {
     });
   }, [layout, size]);
 
-  useEffect(() => { fitView(); }, [structureRev, layoutMode, size.w, size.h, focusId]); // eslint-disable-line
+  useEffect(() => { fitView(); }, [structureRev, size.w, size.h, focusId]); // eslint-disable-line
 
   /* ----- pan & zoom ----- */
   useEffect(() => {
@@ -515,13 +514,6 @@ export default function TaskTreeApp() {
           )}
           {tab === "tree" && (
             <>
-              <button
-                className="tt-btn ghost"
-                onClick={() => setLayoutMode((m) => (m === "horizontal" ? "radial" : "horizontal"))}
-                title="Switch layout"
-              >
-                {layoutMode === "horizontal" ? "◎ Radial" : "⇥ Tree"}
-              </button>
               <button className="tt-btn ghost" onClick={fitView} title="Fit tree to screen">Fit</button>
               <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); setSyncState("idle"); }}>Export</button>
               <button className="tt-btn solid" onClick={() => { setImportTarget(null); setImportText(""); setModal("import"); }}>Import .md</button>
