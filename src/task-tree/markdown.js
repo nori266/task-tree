@@ -8,6 +8,8 @@ import { STATUSES, TYPES, statusByKey, typeByKey, newNode } from "./model.js";
 const TYPE_VARIANTS = {
   call: ["☎️", "☎"],
   coding: ["👩🏻‍💻", "👩‍💻", "🧑🏻‍💻", "🧑‍💻", "👨🏻‍💻", "👨‍💻"],
+  docs: ["✍🏻", "✍🏼", "✍🏽", "✍🏾", "✍🏿", "✍️", "✍"],
+  research: ["🧐"],
 };
 function stripType(title) {
   for (const t of TYPES) {

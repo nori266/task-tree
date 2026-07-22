@@ -9,8 +9,10 @@ export const STATUSES = [
   { key: "question",   emoji: "❓", label: "Needs external input", color: "#8A6FA6" },
 ];
 export const TYPES = [
-  { key: "call",   emoji: "☎️", label: "A call" },
-  { key: "coding", emoji: "👩🏻‍💻", label: "Coding" },
+  { key: "call",     emoji: "☎️", label: "Call" },
+  { key: "coding",   emoji: "👩🏻‍💻", label: "Coding" },
+  { key: "docs",     emoji: "✍🏻", label: "Docs" },
+  { key: "research", emoji: "🧐", label: "Research" },
 ];
 export const statusByKey = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
 export const typeByKey = Object.fromEntries(TYPES.map((t) => [t.key, t]));

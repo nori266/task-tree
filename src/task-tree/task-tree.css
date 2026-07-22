@@ -206,7 +206,7 @@
 /* legend */
 .tt-legend {
   position: absolute; left: 12px; bottom: 12px;
-  display: flex; gap: 4px 10px; flex-wrap: wrap; max-width: min(560px, 90%);
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
   background: rgba(247,249,245,.85); backdrop-filter: blur(4px);
   border: 1px solid #E0E7DE; border-radius: 10px;
   padding: 7px 11px; font-size: 11.5px; color: var(--muted);
@@ -284,7 +284,7 @@
   color: #6E7A72; font-weight: 600; text-transform: uppercase;
   letter-spacing: .08em; font-size: 10px;
 }
-.tt-leg-label.sep { margin-left: 8px; }
+.tt-leg-label.sep { margin-top: 8px; }
 .tt-status {
   display: flex; align-items: center; gap: 6px;
   border: 1px solid #DDE4DB; border-radius: 9px; padding: 6px 8px;
