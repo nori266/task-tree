@@ -10,6 +10,7 @@ import {
 } from "./nodes.jsx";
 import Panel from "./Panel.jsx";
 import { ImportModal, ExportModal } from "./Modals.jsx";
+import Forest from "./Forest.jsx";
 import "./task-tree.css";
 
 /* ────────────────────────────────────────────────
@@ -21,6 +22,9 @@ const CELEBRATE_MIN_SUBNODES = 10;
 
 export default function TaskTreeApp() {
   const [doc, setDoc] = useState(null); // {title, children}
+  const [forest, setForest] = useState([]); // graduated achievements, newest first
+  const [tab, setTab] = useState("tree"); // 'tree' | 'forest'
+  const [planted, setPlanted] = useState(null); // {trees, key} undo toast
   const [selectedId, setSelectedId] = useState(null);
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
   const [layoutMode, setLayoutMode] = useState("horizontal"); // horizontal | radial
@@ -42,7 +46,9 @@ export default function TaskTreeApp() {
   const [celebration, setCelebration] = useState(null); // {id, key, flock} butterflies over a freshly finished big branch
   const loaded = useRef(false);
   const prevBigDone = useRef(null); // ids of big fully-done branches on the previous doc
+  const prevTopDone = useRef(null); // ids of top-level branches that already graduated
   const celebrationTimer = useRef(null);
+  const plantedTimer = useRef(null);
 
   /* ----- load ----- */
   useEffect(() => {
@@ -58,6 +64,13 @@ export default function TaskTreeApp() {
         d = { ...d, children: migrateNodes(d.children) };
       }
       setDoc(d);
+      try {
+        const fr = await window.storage.get("tasktree:forest");
+        if (fr?.value) {
+          const parsed = JSON.parse(fr.value);
+          if (Array.isArray(parsed)) setForest(parsed);
+        }
+      } catch (e) { /* no forest yet */ }
       loaded.current = true;
       setStructureRev((r) => r + 1);
     })();
@@ -78,6 +91,12 @@ export default function TaskTreeApp() {
     }, 600);
     return () => clearTimeout(t);
   }, [doc]);
+
+  /* ----- persist the forest ----- */
+  useEffect(() => {
+    if (!loaded.current) return;
+    window.storage.set("tasktree:forest", JSON.stringify(forest)).catch(() => {});
+  }, [forest]);
 
   /* ----- resize ----- */
   useEffect(() => {
@@ -103,11 +122,13 @@ export default function TaskTreeApp() {
     if (!doc) return;
     const allDone = (n) => n.status === "done" && n.children.every(allDone);
     const big = [];
-    const walk = (n) => {
-      if (countNodes(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)) big.push(n);
-      n.children.forEach(walk);
+    // top-level branches graduate to the Forest, so butterflies celebrate
+    // only nested milestones (depth > 0 within a branch)
+    const walk = (n, depth) => {
+      if (depth > 0 && countNodes(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)) big.push(n);
+      n.children.forEach((c) => walk(c, depth + 1));
     };
-    doc.children.forEach(walk);
+    doc.children.forEach((n) => walk(n, 0));
     const prev = prevBigDone.current;
     prevBigDone.current = new Set(big.map((n) => n.id));
     if (!prev) return; // first doc after load — nothing was just completed
@@ -122,6 +143,63 @@ export default function TaskTreeApp() {
   }, [doc]);
 
   useEffect(() => () => clearTimeout(celebrationTimer.current), []);
+
+  /* ----- graduate a completed big top-level branch to the Forest -----
+     When a direct child of the root and its whole subtree (>= CELEBRATE_MIN_SUBNODES
+     tasks under it) become done, it's cleared from the tree and planted as a
+     tree in the Forest tab. A brief toast lets an accidental completion be undone. */
+  useEffect(() => {
+    if (!doc) return;
+    const allDone = (n) => n.status === "done" && n.children.every(allDone);
+    const eligible = doc.children.filter(
+      (n) => n.children.length && countNodes(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)
+    );
+    const prev = prevTopDone.current;
+    prevTopDone.current = new Set(eligible.map((n) => n.id));
+    if (!prev) return; // first doc after load — don't graduate pre-existing branches
+    const fresh = eligible.filter((n) => !prev.has(n.id));
+    if (!fresh.length) return;
+    const freshIds = new Set(fresh.map((n) => n.id));
+    const trees = fresh.map((n) => ({
+      id: n.id, title: n.title, tree: n, md: toMarkdown([n]), completedAt: Date.now(),
+    }));
+    setForest((f) => [...trees, ...f]);
+    setDoc((d) => ({ ...d, children: d.children.filter((c) => !freshIds.has(c.id)) }));
+    if (focusId && freshIds.has(focusId)) setFocusId(null);
+    setSelectedId((s) => (s && freshIds.has(s) ? null : s));
+    clearTimeout(plantedTimer.current);
+    setPlanted({ trees, key: Date.now() });
+    plantedTimer.current = setTimeout(() => setPlanted(null), 6500);
+    bumpStructure();
+  }, [doc]); // eslint-disable-line
+
+  useEffect(() => () => clearTimeout(plantedTimer.current), []);
+
+  const undoPlant = () => {
+    if (!planted) return;
+    const ids = new Set(planted.trees.map((t) => t.id));
+    setForest((f) => f.filter((a) => !ids.has(a.id)));
+    setDoc((d) => ({ ...d, children: [...d.children, ...planted.trees.map((t) => t.tree)] }));
+    // these branches are done again, so record them so they don't re-graduate
+    prevTopDone.current = new Set([...(prevTopDone.current ?? []), ...ids]);
+    setPlanted(null);
+    clearTimeout(plantedTimer.current);
+    bumpStructure();
+  };
+
+  /* ----- move a tree from the Forest back into the Tree ----- */
+  const returnFromForest = (id) => {
+    const achievement = forest.find((a) => a.id === id);
+    if (!achievement) return;
+    setForest((f) => f.filter((a) => a.id !== id));
+    setDoc((d) => ({ ...d, children: [...d.children, achievement.tree] }));
+    // it's still fully done and big — record it so it isn't graduated straight back
+    prevTopDone.current = new Set([...(prevTopDone.current ?? []), id]);
+    // drop a pending undo toast that referenced it, so undo can't re-add it
+    setPlanted((p) => (p && p.trees.some((t) => t.id === id) ? null : p));
+    setTab("tree");
+    bumpStructure();
+  };
 
   /* ----- focus mode: only the focused node and its subtree are laid out, so
          the branch occupies the full screen; the hub still adds/reparents
@@ -328,16 +406,32 @@ export default function TaskTreeApp() {
         <div className="tt-brand">
           <span className="tt-brand-dot" />
           <span className="tt-brand-name">Task Tree</span>
-          <span className="tt-progress">
-            {done}/{total} done
-            {focus && <em> · ◉ {labelOf(focus.title)}</em>}
-            {saveState === "saving" && <em> · saving…</em>}
-            {saveState === "saved" && <em> · saved</em>}
-            {saveState === "error" && <em className="err"> · couldn't save</em>}
-          </span>
+          <div className="tt-tabs" role="tablist">
+            <button
+              className={`tt-tab ${tab === "tree" ? "on" : ""}`}
+              onClick={() => setTab("tree")}
+            >
+              🌳 Tree
+            </button>
+            <button
+              className={`tt-tab ${tab === "forest" ? "on" : ""}`}
+              onClick={() => setTab("forest")}
+            >
+              🌲 Forest{forest.length ? ` (${forest.length})` : ""}
+            </button>
+          </div>
+          {tab === "tree" && (
+            <span className="tt-progress">
+              {done}/{total} done
+              {focus && <em> · ◉ {labelOf(focus.title)}</em>}
+              {saveState === "saving" && <em> · saving…</em>}
+              {saveState === "saved" && <em> · saved</em>}
+              {saveState === "error" && <em className="err"> · couldn't save</em>}
+            </span>
+          )}
         </div>
         <div className="tt-actions">
-          {(selectedId || focusId) && (
+          {tab === "tree" && (selectedId || focusId) && (
             <button
               className="tt-btn ghost"
               onClick={() =>
@@ -352,21 +446,28 @@ export default function TaskTreeApp() {
               {selectedId && selectedId !== focusId ? "◉ Focus" : "⊙ Show all"}
             </button>
           )}
-          <button
-            className="tt-btn ghost"
-            onClick={() => setLayoutMode((m) => (m === "horizontal" ? "radial" : "horizontal"))}
-            title="Switch layout"
-          >
-            {layoutMode === "horizontal" ? "◎ Radial" : "⇥ Tree"}
-          </button>
-          <button className="tt-btn ghost" onClick={fitView} title="Fit tree to screen">Fit</button>
-          <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); }}>Export</button>
-          <button className="tt-btn solid" onClick={() => setModal("import")}>Import .md</button>
+          {tab === "tree" && (
+            <>
+              <button
+                className="tt-btn ghost"
+                onClick={() => setLayoutMode((m) => (m === "horizontal" ? "radial" : "horizontal"))}
+                title="Switch layout"
+              >
+                {layoutMode === "horizontal" ? "◎ Radial" : "⇥ Tree"}
+              </button>
+              <button className="tt-btn ghost" onClick={fitView} title="Fit tree to screen">Fit</button>
+              <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); }}>Export</button>
+              <button className="tt-btn solid" onClick={() => setModal("import")}>Import .md</button>
+            </>
+          )}
         </div>
       </header>
 
       {/* canvas */}
       <div className="tt-canvas" ref={containerRef}>
+        {tab === "forest" && <Forest achievements={forest} onReturn={returnFromForest} />}
+        {tab === "tree" && (
+        <>
         <div
           className="tt-svgwrap"
           ref={svgWrapRef}
@@ -472,11 +573,29 @@ export default function TaskTreeApp() {
             The tree is empty. <button className="tt-linkbtn" onClick={() => setModal("import")}>Import a markdown list</button> or tap the 🌳 to plant a first task.
           </div>
         )}
+        </>
+        )}
+
+        {/* graduated-to-forest toast, with undo */}
+        {planted && (
+          <div className="tt-toast" key={planted.key}>
+            <span className="tt-toast-icon">🌲</span>
+            <span className="tt-toast-text">
+              {planted.trees.length === 1
+                ? <>“{labelOf(planted.trees[0].title || "Untitled branch")}” is complete — planted in your Forest.</>
+                : <>{planted.trees.length} branches complete — planted in your Forest.</>}
+            </span>
+            <button className="tt-toast-undo" onClick={undoPlant}>Undo</button>
+            {tab === "tree" && (
+              <button className="tt-toast-go" onClick={() => setTab("forest")}>View</button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* detail panel */}
       <Panel
-        selected={selected}
+        selected={tab === "tree" ? selected : null}
         titleInputRef={titleInputRef}
         confirmDelete={confirmDelete}
         setConfirmDelete={setConfirmDelete}
