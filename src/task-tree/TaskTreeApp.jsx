@@ -220,10 +220,10 @@ export default function TaskTreeApp() {
     [viewDoc, size, doneBranchIds]
   );
 
-  /* ----- fit view ----- */
-  const fitView = useCallback(() => {
+  /* ----- content bounds (world coords) ----- */
+  const bounds = useMemo(() => {
     const ns = layout.nodes;
-    if (!ns.length) return;
+    if (!ns.length) return null;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const n of ns) {
       const w = n.d.depth === 0 ? 40 : pillW(n.d.data);
@@ -232,6 +232,30 @@ export default function TaskTreeApp() {
       minY = Math.min(minY, n.y - PILL_H);
       maxY = Math.max(maxY, n.y + PILL_H);
     }
+    return { minX, maxX, minY, maxY };
+  }, [layout]);
+
+  /* ----- keep the tree on screen: clamp pan/zoom so at least a strip of the
+         content always overlaps the viewport (otherwise it can be dragged or
+         zoomed entirely out of view, leaving a blank canvas) ----- */
+  const clampView = useCallback((v) => {
+    if (!bounds) return v;
+    const m = 80; // px of content kept visible at every edge
+    const minX = m - bounds.maxX * v.k;
+    const maxX = size.w - m - bounds.minX * v.k;
+    const minY = m - bounds.maxY * v.k;
+    const maxY = size.h - m - bounds.minY * v.k;
+    return {
+      ...v,
+      x: Math.min(maxX, Math.max(minX, v.x)),
+      y: Math.min(maxY, Math.max(minY, v.y)),
+    };
+  }, [bounds, size]);
+
+  /* ----- fit view ----- */
+  const fitView = useCallback(() => {
+    if (!bounds) return;
+    const { minX, maxX, minY, maxY } = bounds;
     const bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY);
     const pad = 36;
     const k = Math.min((size.w - pad * 2) / bw, (size.h - pad * 2) / bh, 1.5);
@@ -241,7 +265,7 @@ export default function TaskTreeApp() {
       x: (size.w - bw * kk) / 2 - minX * kk,
       y: (size.h - bh * kk) / 2 - minY * kk,
     });
-  }, [layout, size]);
+  }, [bounds, size]);
 
   useEffect(() => { fitView(); }, [structureRev, size.w, size.h, focusId]); // eslint-disable-line
 
@@ -256,12 +280,12 @@ export default function TaskTreeApp() {
         const k = Math.min(3, Math.max(0.12, v.k * factor));
         const rect = el.getBoundingClientRect();
         const px = e.clientX - rect.left, py = e.clientY - rect.top;
-        return { k, x: px - ((px - v.x) / v.k) * k, y: py - ((py - v.y) / v.k) * k };
+        return clampView({ k, x: px - ((px - v.x) / v.k) * k, y: py - ((py - v.y) / v.k) * k });
       });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [clampView]);
 
   const onPointerDown = (e) => {
     if (e.target.closest?.("[data-node]")) return;
@@ -269,10 +293,14 @@ export default function TaskTreeApp() {
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e) => {
-    if (!drag.current) return;
-    const dx = e.clientX - drag.current.sx, dy = e.clientY - drag.current.sy;
-    if (Math.abs(dx) + Math.abs(dy) > 3) drag.current.moved = true;
-    setView((v) => ({ ...v, x: drag.current.ox + dx, y: drag.current.oy + dy }));
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
+    // Capture the target position now; don't read the mutable ref inside the
+    // setView updater — onPointerUp may null it out before React runs it.
+    const nx = d.ox + dx, ny = d.oy + dy;
+    setView((v) => clampView({ ...v, x: nx, y: ny }));
   };
   const onPointerUp = () => {
     if (drag.current && !drag.current.moved) setSelectedId(null);
