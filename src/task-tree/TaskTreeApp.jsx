@@ -569,7 +569,7 @@ export default function TaskTreeApp() {
                 <path
                   key={l.id}
                   d={l.path}
-                  className={`tt-link ${doneBranchIds.has(l.id) ? "done" : ""} ${l.inprogress ? "active" : ""}`}
+                  className={`tt-link ${doneBranchIds.has(l.id) ? "done" : ""} ${l.inprogress ? "active" : ""} ${l.next ? "next" : ""}`}
                 />
               ))}
               {layout.nodes.map((n) => {

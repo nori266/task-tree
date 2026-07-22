@@ -70,6 +70,7 @@ export function computeLayout(doc, size, doneBranchIds) {
     return {
       id: l.target.data.id,
       inprogress: l.target.data.status === "inprogress",
+      next: l.target.data.status === "next",
       path: `M${s.x},${s.y} C${mx},${s.y} ${mx},${t.y} ${t.x},${t.y}`,
     };
   });

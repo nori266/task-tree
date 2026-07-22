@@ -158,6 +158,8 @@
 .tt-link.done { stroke: #9CBD9F; }
 /* branch feeding an in-progress task reads heavier and darker */
 .tt-link.active { stroke: #7E9184; stroke-width: 2.8; }
+/* branch feeding a "will do next" task: same emphasis, a touch dimmer + bluer */
+.tt-link.next { stroke: #93A6BC; stroke-width: 2.2; }
 .tt-twig { cursor: grab; }
 .tt-twig.dragging { opacity: .3; }
 .tt-twig-wood {
