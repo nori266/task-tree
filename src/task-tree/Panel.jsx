@@ -5,7 +5,7 @@ import { STATUSES, TYPES } from "./model.js";
 
 export default function Panel({
   selected, titleInputRef, confirmDelete, setConfirmDelete,
-  onPatch, onAddChild, onDelete, onClose,
+  onPatch, onAddChild, onImportChild, onDelete, onClose,
 }) {
   return (
     <aside className={`tt-panel ${selected ? "open" : ""}`}>
@@ -97,6 +97,9 @@ export default function Panel({
           <div className="tt-panel-foot">
             <button className="tt-btn solid wide" onClick={onAddChild}>
               + Add sub-task
+            </button>
+            <button className="tt-btn ghost wide" onClick={onImportChild}>
+              Import sub-tasks from .md
             </button>
             <button
               className={`tt-btn danger wide ${confirmDelete ? "confirm" : ""}`}

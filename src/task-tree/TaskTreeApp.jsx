@@ -31,6 +31,7 @@ export default function TaskTreeApp() {
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [modal, setModal] = useState(null); // 'import' | 'export' | null
   const [importText, setImportText] = useState("");
+  const [importTarget, setImportTarget] = useState(null); // node id to import into, or null for whole tree
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saveState, setSaveState] = useState("idle");
   const [copied, setCopied] = useState(false);
@@ -377,14 +378,22 @@ export default function TaskTreeApp() {
   const handleImport = (mode) => {
     const roots = parseMarkdown(importText);
     if (!roots.length) return;
-    setDoc((d) =>
-      mode === "replace"
+    setDoc((d) => {
+      if (importTarget) {
+        const node = findNode(d.children, importTarget);
+        if (!node) return d;
+        const nextChildren = mode === "replace" ? roots : [...node.children, ...roots];
+        return { ...d, children: updateNode(d.children, importTarget, { children: nextChildren }) };
+      }
+      return mode === "replace"
         ? { ...d, children: roots }
-        : { ...d, children: [...d.children, ...roots] }
-    );
+        : { ...d, children: [...d.children, ...roots] };
+    });
     setModal(null);
     setImportText("");
-    setSelectedId(null);
+    if (importTarget) setSelectedId(importTarget);
+    else setSelectedId(null);
+    setImportTarget(null);
     bumpStructure();
   };
 
@@ -515,7 +524,7 @@ export default function TaskTreeApp() {
               </button>
               <button className="tt-btn ghost" onClick={fitView} title="Fit tree to screen">Fit</button>
               <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); setSyncState("idle"); }}>Export</button>
-              <button className="tt-btn solid" onClick={() => setModal("import")}>Import .md</button>
+              <button className="tt-btn solid" onClick={() => { setImportTarget(null); setImportText(""); setModal("import"); }}>Import .md</button>
             </>
           )}
         </div>
@@ -628,7 +637,7 @@ export default function TaskTreeApp() {
         {/* hint */}
         {doc && !doc.children.length && (
           <div className="tt-empty">
-            The tree is empty. <button className="tt-linkbtn" onClick={() => setModal("import")}>Import a markdown list</button> or tap the 🌳 to plant a first task.
+            The tree is empty. <button className="tt-linkbtn" onClick={() => { setImportTarget(null); setImportText(""); setModal("import"); }}>Import a markdown list</button> or tap the 🌳 to plant a first task.
           </div>
         )}
         </>
@@ -659,6 +668,7 @@ export default function TaskTreeApp() {
         setConfirmDelete={setConfirmDelete}
         onPatch={(patch) => setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, patch) }))}
         onAddChild={() => handleAddChild(selected.id)}
+        onImportChild={() => { setImportTarget(selected.id); setImportText(""); setModal("import"); }}
         onDelete={() => handleDelete(selected.id)}
         onClose={() => setSelectedId(null)}
       />
@@ -669,7 +679,8 @@ export default function TaskTreeApp() {
           text={importText}
           setText={setImportText}
           onImport={handleImport}
-          onClose={() => setModal(null)}
+          onClose={() => { setModal(null); setImportTarget(null); }}
+          targetTitle={importTarget ? findNode(doc.children, importTarget)?.title : null}
         />
       )}
       {modal === "export" && (

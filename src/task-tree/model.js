@@ -3,7 +3,6 @@
 export const STATUSES = [
   { key: "inprogress", emoji: "💻", label: "In progress", color: "#4F836B" },
   { key: "waiting",    emoji: "⏳", label: "Waiting to start", color: "#A08D5F" },
-  { key: "blocked",    emoji: "🧱", label: "Blocked", color: "#B06A5A" },
   { key: "next",       emoji: "⏭️", label: "Will do next", color: "#5B7FA6" },
   { key: "done",       emoji: "✅", label: "Done", color: "#93A697" },
   { key: "question",   emoji: "❓", label: "Needs external input", color: "#8A6FA6" },

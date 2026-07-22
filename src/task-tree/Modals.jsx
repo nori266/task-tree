@@ -1,11 +1,12 @@
 import { STATUSES, TYPES } from "./model.js";
 import { SAMPLE_MD } from "./markdown.js";
 
-export function ImportModal({ text, setText, onImport, onClose }) {
+export function ImportModal({ text, setText, onImport, onClose, targetTitle }) {
+  const intoNode = targetTitle != null;
   return (
     <div className="tt-scrim" onClick={onClose}>
       <div className="tt-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Import markdown</h3>
+        <h3>{intoNode ? <>Import into “{targetTitle || "task"}”</> : "Import markdown"}</h3>
         <p className="tt-note">
           Nested bullets become branches; numbered items (<code>1.</code>) work
           the same as bullets and can be mixed with them. A type emoji at the start of an item
@@ -25,8 +26,8 @@ export function ImportModal({ text, setText, onImport, onClose }) {
         />
         <div className="tt-modal-actions">
           <button className="tt-btn ghost" onClick={onClose}>Cancel</button>
-          <button className="tt-btn ghost" disabled={!text.trim()} onClick={() => onImport("append")}>Add to tree</button>
-          <button className="tt-btn solid" disabled={!text.trim()} onClick={() => onImport("replace")}>Replace tree</button>
+          <button className="tt-btn ghost" disabled={!text.trim()} onClick={() => onImport("append")}>{intoNode ? "Add as sub-tasks" : "Add to tree"}</button>
+          <button className="tt-btn solid" disabled={!text.trim()} onClick={() => onImport("replace")}>{intoNode ? "Replace sub-tasks" : "Replace tree"}</button>
         </div>
       </div>
     </div>
