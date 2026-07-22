@@ -34,6 +34,8 @@ export default function TaskTreeApp() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saveState, setSaveState] = useState("idle");
   const [copied, setCopied] = useState(false);
+  const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | error
+  const [syncFileName, setSyncFileName] = useState(null);
   const [structureRev, setStructureRev] = useState(0);
   const [size, setSize] = useState({ w: 1000, h: 700 });
 
@@ -49,6 +51,8 @@ export default function TaskTreeApp() {
   const prevTopDone = useRef(null); // ids of top-level branches that already graduated
   const celebrationTimer = useRef(null);
   const plantedTimer = useRef(null);
+  const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
+  const syncTimer = useRef(null);
 
   /* ----- load ----- */
   useEffect(() => {
@@ -393,6 +397,60 @@ export default function TaskTreeApp() {
     } catch (e) { /* textarea remains selectable */ }
   };
 
+  const flashSynced = () => {
+    setSyncState("synced");
+    if (syncTimer.current) clearTimeout(syncTimer.current);
+    syncTimer.current = setTimeout(() => setSyncState("idle"), 1500);
+  };
+
+  // Let the user set (or change) the file the tree syncs to, then write to it.
+  const pickSyncFile = async () => {
+    if (!window.showSaveFilePicker) {
+      // Browser without the File System Access API — fall back to a plain download.
+      const blob = new Blob([exportMd], { type: "text/markdown" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(doc?.title || "tasks").replace(/[^\w.-]+/g, "-")}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+      flashSynced();
+      return;
+    }
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: `${(doc?.title || "tasks").replace(/[^\w.-]+/g, "-")}.md`,
+        types: [{ description: "Markdown", accept: { "text/markdown": [".md"] } }],
+      });
+      syncHandle.current = handle;
+      setSyncFileName(handle.name);
+      await writeSyncFile(handle);
+    } catch (e) {
+      if (e?.name !== "AbortError") setSyncState("error");
+    }
+  };
+
+  const writeSyncFile = async (handle) => {
+    setSyncState("syncing");
+    try {
+      const writable = await handle.createWritable();
+      await writable.write(exportMd);
+      await writable.close();
+      flashSynced();
+    } catch (e) {
+      setSyncState("error");
+    }
+  };
+
+  // Sync button: write to the already-chosen file, or prompt for one on first use.
+  const syncExport = async () => {
+    if (syncHandle.current) {
+      await writeSyncFile(syncHandle.current);
+    } else {
+      await pickSyncFile();
+    }
+  };
+
   const selected = doc && selectedId ? findNode(doc.children, selectedId) : null;
   const total = doc ? countNodes(doc.children) : 0;
   const done = doc ? countDone(doc.children) : 0;
@@ -456,7 +514,7 @@ export default function TaskTreeApp() {
                 {layoutMode === "horizontal" ? "◎ Radial" : "⇥ Tree"}
               </button>
               <button className="tt-btn ghost" onClick={fitView} title="Fit tree to screen">Fit</button>
-              <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); }}>Export</button>
+              <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); setSyncState("idle"); }}>Export</button>
               <button className="tt-btn solid" onClick={() => setModal("import")}>Import .md</button>
             </>
           )}
@@ -620,6 +678,10 @@ export default function TaskTreeApp() {
           copied={copied}
           onCopy={copyExport}
           onClose={() => setModal(null)}
+          onSync={syncExport}
+          onPickSyncFile={pickSyncFile}
+          syncState={syncState}
+          syncFileName={syncFileName}
         />
       )}
     </div>

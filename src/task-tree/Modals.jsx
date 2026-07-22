@@ -33,14 +33,36 @@ export function ImportModal({ text, setText, onImport, onClose }) {
   );
 }
 
-export function ExportModal({ markdown, copied, onCopy, onClose }) {
+export function ExportModal({
+  markdown,
+  copied,
+  onCopy,
+  onClose,
+  onSync,
+  onPickSyncFile,
+  syncState,
+  syncFileName,
+}) {
+  const syncLabel =
+    syncState === "syncing" ? "Syncing…" :
+    syncState === "synced" ? "Synced ✓" :
+    syncState === "error" ? "Sync failed" :
+    syncFileName ? "Sync" : "Sync…";
   return (
     <div className="tt-scrim" onClick={onClose}>
       <div className="tt-modal" onClick={(e) => e.stopPropagation()}>
         <h3>Export markdown</h3>
         <textarea rows={12} readOnly value={markdown} onFocus={(e) => e.currentTarget.select()} />
+        {syncFileName && (
+          <p className="tt-note">
+            Syncing to <code>{syncFileName}</code>
+            {" · "}
+            <button type="button" className="tt-linkbtn" onClick={onPickSyncFile}>change file</button>
+          </p>
+        )}
         <div className="tt-modal-actions">
           <button className="tt-btn ghost" onClick={onClose}>Close</button>
+          <button className="tt-btn ghost" onClick={onSync} disabled={syncState === "syncing"}>{syncLabel}</button>
           <button className="tt-btn solid" onClick={onCopy}>{copied ? "Copied ✓" : "Copy"}</button>
         </div>
       </div>
