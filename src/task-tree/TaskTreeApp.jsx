@@ -6,7 +6,7 @@ import {
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
 import {
-  RootHub, TaskPill, DoneLeaf, DoneTwig, DragGhost, Butterflies, makeFlock,
+  RootHub, TaskPill, DoneLeaf, DoneTwig, DragGhost, Butterflies, makeFlock, FallingLeaves,
 } from "./nodes.jsx";
 import Panel from "./Panel.jsx";
 import { ImportModal, ExportModal } from "./Modals.jsx";
@@ -15,6 +15,9 @@ import Backlog from "./Backlog.jsx";
 import {
   sweepBacklog, mergeIntoBacklog, takeFromBacklog, graftIntoTree, countBacklogged,
 } from "./backlog.js";
+import {
+  dayIndex, fadedIds as computeFadedIds, collectFallen, applyFall, stampDone, shedUnder,
+} from "./leaffall.js";
 import "./task-tree.css";
 
 /* ────────────────────────────────────────────────
@@ -22,15 +25,21 @@ import "./task-tree.css";
    Import nested markdown bullets → balanced tree.
    ──────────────────────────────────────────────── */
 
-const CELEBRATE_MIN_SUBNODES = 10;
+const CELEBRATE_MIN_SUBNODES = 10; // subnodes that earn a branch a tree in the Forest
+const BUTTERFLY_MIN_SUBNODES = 4;  // smaller finished branches erode, so they get butterflies
 
 export default function TaskTreeApp() {
   const [doc, setDoc] = useState(null); // {title, children}
   const [forest, setForest] = useState([]); // graduated achievements, newest first
   const [backlog, setBacklog] = useState([]); // mirror tree of aged-out branches
+  const [litter, setLitter] = useState([]); // fallen done leaves, on the Forest floor
   const [tab, setTab] = useState("tree"); // 'tree' | 'forest' | 'backlog'
   const [planted, setPlanted] = useState(null); // {trees, key} undo toast
   const [backlogged, setBacklogged] = useState(null); // {count, title, key} toast
+  const [fell, setFell] = useState(null); // {count, key, snapshot} undo toast for a leaf-fall
+  const [falling, setFalling] = useState(null); // {key, ids, leaves} mid-flight, tree not yet reflowed
+  const [fallTick, setFallTick] = useState(0); // bumped when a leaf-fall sweep is due
+  const [today, setToday] = useState(() => dayIndex(Date.now())); // local calendar day
   const [sweepTick, setSweepTick] = useState(0); // re-checks ages while the app stays open
   const [selectedId, setSelectedId] = useState(null);
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
@@ -55,10 +64,13 @@ export default function TaskTreeApp() {
   const [celebration, setCelebration] = useState(null); // {id, key, flock} butterflies over a freshly finished big branch
   const loaded = useRef(false);
   const prevBigDone = useRef(null); // ids of big fully-done branches on the previous doc
-  const prevTopDone = useRef(null); // ids of top-level branches that already graduated
+  const prevGraduable = useRef(null); // ids of branches that already graduated, any depth
   const celebrationTimer = useRef(null);
   const plantedTimer = useRef(null);
   const backloggedTimer = useRef(null);
+  const lastSweepDay = useRef(null); // day index of the last leaf-fall sweep
+  const fallTimer = useRef(null);
+  const fellTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
   const syncTimer = useRef(null);
 
@@ -90,9 +102,17 @@ export default function TaskTreeApp() {
           if (Array.isArray(parsed)) setBacklog(migrateNodes(parsed));
         }
       } catch (e) { /* no backlog yet */ }
+      try {
+        const lt = await window.storage.get("tasktree:litter");
+        if (lt?.value) {
+          const parsed = JSON.parse(lt.value);
+          if (Array.isArray(parsed)) setLitter(parsed);
+        }
+      } catch (e) { /* nothing has fallen yet */ }
       loaded.current = true;
       setStructureRev((r) => r + 1);
       setSweepTick((x) => x + 1); // age check now that the saved doc is in place
+      setFallTick((x) => x + 1); // and the day's leaf-fall
     })();
   }, []);
 
@@ -124,6 +144,12 @@ export default function TaskTreeApp() {
     window.storage.set("tasktree:backlog", JSON.stringify(backlog)).catch(() => {});
   }, [backlog]);
 
+  /* ----- persist the litter ----- */
+  useEffect(() => {
+    if (!loaded.current) return;
+    window.storage.set("tasktree:litter", JSON.stringify(litter)).catch(() => {});
+  }, [litter]);
+
   /* ----- age untouched leaves out of the Tree into the Backlog -----
      A leaf with no status that has sat in the Tree for a week moves to the
      Backlog together with a copy of its ancestors; a parent left childless by
@@ -146,7 +172,12 @@ export default function TaskTreeApp() {
   }, [doc, sweepTick]); // eslint-disable-line
 
   useEffect(() => {
-    const t = setInterval(() => setSweepTick((x) => x + 1), 10 * 60 * 1000);
+    const t = setInterval(() => {
+      setSweepTick((x) => x + 1);
+      // a tab left open past midnight should at least show the new fade state;
+      // the fall itself waits for the next return to the tab
+      setToday(dayIndex(Date.now()));
+    }, 10 * 60 * 1000);
     return () => { clearInterval(t); clearTimeout(backloggedTimer.current); };
   }, []);
 
@@ -192,19 +223,29 @@ export default function TaskTreeApp() {
     [doc]
   );
 
-  /* ----- butterflies when a big branch (>= CELEBRATE_MIN_SUBNODES subnodes)
-         becomes fully done, itself included ----- */
+  /* ----- done tasks old enough to render faded (finished yesterday or earlier,
+         so they're on their way off the tree) ----- */
+  const fadedIds = useMemo(
+    () => computeFadedIds(doc?.children ?? [], today),
+    [doc, today]
+  );
+
+  /* ----- butterflies when a smallish branch becomes fully done -----
+         Branches big enough to graduate get the Forest toast instead (and no
+         longer have a node to fly over once they're lifted out), so the
+         butterflies now belong to the finished branches that will quietly
+         erode into litter — the wins that would otherwise pass unmarked. */
   useEffect(() => {
     if (!doc) return;
     const allDone = (n) => n.status === "done" && n.children.every(allDone);
     const big = [];
-    // top-level branches graduate to the Forest, so butterflies celebrate
-    // only nested milestones (depth > 0 within a branch)
-    const walk = (n, depth) => {
-      if (depth > 0 && countNodes(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)) big.push(n);
-      n.children.forEach((c) => walk(c, depth + 1));
+    const walk = (n) => {
+      const size = countNodes(n.children) + shedUnder(litter, n.id);
+      if (n.children.length && size >= BUTTERFLY_MIN_SUBNODES
+          && size < CELEBRATE_MIN_SUBNODES && allDone(n)) big.push(n);
+      n.children.forEach(walk);
     };
-    doc.children.forEach((n) => walk(n, 0));
+    doc.children.forEach(walk);
     const prev = prevBigDone.current;
     prevBigDone.current = new Set(big.map((n) => n.id));
     if (!prev) return; // first doc after load — nothing was just completed
@@ -216,35 +257,52 @@ export default function TaskTreeApp() {
     clearTimeout(celebrationTimer.current);
     setCelebration({ id: star.id, key: Date.now(), flock: makeFlock(count) });
     celebrationTimer.current = setTimeout(() => setCelebration(null), 4600);
-  }, [doc]);
+  }, [doc]); // eslint-disable-line
 
   useEffect(() => () => clearTimeout(celebrationTimer.current), []);
 
-  /* ----- graduate a completed big top-level branch to the Forest -----
-     When a direct child of the root and its whole subtree (>= CELEBRATE_MIN_SUBNODES
-     tasks under it) become done, it's cleared from the tree and planted as a
-     tree in the Forest tab. A brief toast lets an accidental completion be undone. */
+  /* ----- graduate a completed branch to the Forest -----
+     When a branch and its whole subtree (>= CELEBRATE_MIN_SUBNODES tasks under
+     it) become done, it's cleared from the Tree and planted as a tree in the
+     Forest tab — at any depth, not only top level. When nested branches
+     qualify in the same tick the outermost one wins, so one achievement isn't
+     shredded into several trees; in ordinary use a nested branch finishes
+     earlier than the parent containing it and graduates on its own.
+     Leaves the branch already shed count toward its size, so a slowly finished
+     project can't erode below the bar for its own tree.
+     A brief toast lets an accidental completion be undone. */
   useEffect(() => {
     if (!doc) return;
     const allDone = (n) => n.status === "done" && n.children.every(allDone);
-    const eligible = doc.children.filter(
-      (n) => n.children.length && countNodes(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)
-    );
-    const prev = prevTopDone.current;
-    prevTopDone.current = new Set(eligible.map((n) => n.id));
+    const eligible = [];
+    const walk = (nodes) => {
+      for (const n of nodes) {
+        const size = countNodes(n.children) + shedUnder(litter, n.id);
+        if (n.children.length && size >= CELEBRATE_MIN_SUBNODES && allDone(n)) eligible.push(n);
+        else walk(n.children); // don't look inside a branch that is graduating
+      }
+    };
+    walk(doc.children);
+    const prev = prevGraduable.current;
+    prevGraduable.current = new Set(eligible.map((n) => n.id));
     if (!prev) return; // first doc after load — don't graduate pre-existing branches
     const fresh = eligible.filter((n) => !prev.has(n.id));
     if (!fresh.length) return;
     const freshIds = new Set(fresh.map((n) => n.id));
+    const now = Date.now();
     const trees = fresh.map((n) => ({
-      id: n.id, title: n.title, tree: n, md: toMarkdown([n]), completedAt: Date.now(),
+      id: n.id, title: n.title, tree: n, md: toMarkdown([n]),
+      shed: shedUnder(litter, n.id), completedAt: now,
     }));
     setForest((f) => [...trees, ...f]);
-    setDoc((d) => ({ ...d, children: d.children.filter((c) => !freshIds.has(c.id)) }));
+    // applyFall, not a plain filter: the branch may be nested, and a parent
+    // left childless by its departure inherits `done` instead of looking like
+    // untouched work to the Backlog sweep
+    setDoc((d) => ({ ...d, children: applyFall(d.children, freshIds, now) }));
     if (focusId && freshIds.has(focusId)) setFocusId(null);
     setSelectedId((s) => (s && freshIds.has(s) ? null : s));
     clearTimeout(plantedTimer.current);
-    setPlanted({ trees, key: Date.now() });
+    setPlanted({ trees, key: now, snapshot: doc.children });
     plantedTimer.current = setTimeout(() => setPlanted(null), 6500);
     bumpStructure();
   }, [doc]); // eslint-disable-line
@@ -255,9 +313,11 @@ export default function TaskTreeApp() {
     if (!planted) return;
     const ids = new Set(planted.trees.map((t) => t.id));
     setForest((f) => f.filter((a) => !ids.has(a.id)));
-    setDoc((d) => ({ ...d, children: [...d.children, ...planted.trees.map((t) => t.tree)] }));
+    // restore the pre-graduation tree wholesale, so a nested branch goes back
+    // exactly where it was rather than resurfacing as a top-level one
+    setDoc((d) => ({ ...d, children: planted.snapshot }));
     // these branches are done again, so record them so they don't re-graduate
-    prevTopDone.current = new Set([...(prevTopDone.current ?? []), ...ids]);
+    prevGraduable.current = new Set([...(prevGraduable.current ?? []), ...ids]);
     setPlanted(null);
     clearTimeout(plantedTimer.current);
     bumpStructure();
@@ -270,7 +330,7 @@ export default function TaskTreeApp() {
     setForest((f) => f.filter((a) => a.id !== id));
     setDoc((d) => ({ ...d, children: [...d.children, achievement.tree] }));
     // it's still fully done and big — record it so it isn't graduated straight back
-    prevTopDone.current = new Set([...(prevTopDone.current ?? []), id]);
+    prevGraduable.current = new Set([...(prevGraduable.current ?? []), id]);
     // drop a pending undo toast that referenced it, so undo can't re-add it
     setPlanted((p) => (p && p.trees.some((t) => t.id === id) ? null : p));
     setTab("tree");
@@ -291,6 +351,85 @@ export default function TaskTreeApp() {
     () => computeLayout(viewDoc, size, doneBranchIds),
     [viewDoc, size, doneBranchIds]
   );
+
+  /* ----- leaf-fall: done leaves let go and drop to the Forest floor -----
+     Runs only when the app opens and when you come back on a new day, so
+     nothing ever moves under the cursor mid-session. Two-phase on purpose:
+     the leaves are held in flight with the coordinates they had at sweep time
+     and the doc isn't touched until the last one lands, otherwise the tree
+     would re-layout and the surviving pills would jump around underneath them. */
+  useEffect(() => {
+    if (!loaded.current || !doc || falling) return;
+    const now = Date.now();
+    const t = dayIndex(now);
+    lastSweepDay.current = t;
+    const fallen = collectFallen(doc.children, t);
+    if (!fallen.length) return;
+    const ids = new Set(fallen.map((f) => f.id));
+    // where each leaf hangs right now; a leaf outside the focused subtree has
+    // no position on screen, so it just leaves without the animation
+    const byId = new Map(
+      layout.nodes.filter((n) => n.d.depth > 0).map((n) => [n.d.data.id, n])
+    );
+    const placed = fallen
+      .map((f) => ({ f, n: byId.get(f.id) }))
+      .filter((p) => p.n)
+      .sort((a, b) => b.n.d.depth - a.n.d.depth); // outer tips let go first
+    const span = Math.min(1.0, placed.length * 0.06); // whole shower stays brief
+    const leaves = placed.map((p, i) => ({
+      id: p.f.id,
+      x: p.n.x,
+      y: p.n.y,
+      delay: placed.length > 1 ? (i / (placed.length - 1)) * span : 0,
+    }));
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const flight = reduced ? 520 : (span + 1.85) * 1000;
+    const snapshot = { children: doc.children, litter };
+    setFalling({ key: now, ids, leaves });
+    clearTimeout(fallTimer.current);
+    fallTimer.current = setTimeout(() => {
+      const landed = Date.now();
+      // patch the *current* doc rather than the one captured at sweep time, so
+      // an edit made during the flight isn't thrown away
+      setDoc((d) => ({ ...d, children: applyFall(d.children, ids, landed) }));
+      setLitter((ls) => [...ls, ...fallen.map((f) => ({ ...f, fallenAt: landed }))]);
+      if (focusId && ids.has(focusId)) setFocusId(null);
+      setSelectedId((s) => (s && ids.has(s) ? null : s));
+      setFalling(null);
+      clearTimeout(fellTimer.current);
+      setFell({ count: fallen.length, key: landed, snapshot });
+      fellTimer.current = setTimeout(() => setFell(null), 7000);
+      bumpStructure();
+    }, flight);
+  }, [fallTick]); // eslint-disable-line
+
+  /* Coming back to the tab on a new day fades what aged overnight and drops
+     what's ready; the same-day return does nothing. */
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      const t = dayIndex(Date.now());
+      setToday(t);
+      if (lastSweepDay.current !== null && t !== lastSweepDay.current) {
+        setFallTick((x) => x + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      clearTimeout(fallTimer.current);
+      clearTimeout(fellTimer.current);
+    };
+  }, []);
+
+  const undoFall = () => {
+    if (!fell) return;
+    setDoc((d) => ({ ...d, children: fell.snapshot.children }));
+    setLitter(fell.snapshot.litter);
+    setFell(null);
+    clearTimeout(fellTimer.current);
+    bumpStructure();
+  };
 
   /* ----- content bounds (world coords) ----- */
   const bounds = useMemo(() => {
@@ -632,7 +771,9 @@ export default function TaskTreeApp() {
 
       {/* canvas */}
       <div className="tt-canvas" ref={containerRef}>
-        {tab === "forest" && <Forest achievements={forest} onReturn={returnFromForest} />}
+        {tab === "forest" && (
+          <Forest achievements={forest} litter={litter} onReturn={returnFromForest} />
+        )}
         {tab === "backlog" && (
           <Backlog
             nodes={backlog}
@@ -654,11 +795,13 @@ export default function TaskTreeApp() {
           <svg width={size.w} height={size.h}>
             <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
               {layout.links.map((l) => (
-                <path
-                  key={l.id}
-                  d={l.path}
-                  className={`tt-link ${doneBranchIds.has(l.id) ? "done" : ""} ${l.inprogress ? "active" : ""} ${l.next ? "next" : ""}`}
-                />
+                falling?.ids.has(l.id) ? null : (
+                  <path
+                    key={l.id}
+                    d={l.path}
+                    className={`tt-link ${doneBranchIds.has(l.id) ? "done" : ""} ${fadedIds.has(l.id) ? "faded" : ""} ${l.inprogress ? "active" : ""} ${l.next ? "next" : ""}`}
+                  />
+                )
               ))}
               {layout.nodes.map((n) => {
                 const data = n.d.data;
@@ -674,6 +817,9 @@ export default function TaskTreeApp() {
                     />
                   );
                 }
+                // in flight: drawn by FallingLeaves instead, and the tree
+                // deliberately keeps its old layout until they land
+                if (falling?.ids.has(data.id)) return null;
                 const isSel = data.id === selectedId;
                 const isDone = data.status === "done";
                 const isLeaf = !data.children || data.children.length === 0;
@@ -681,6 +827,7 @@ export default function TaskTreeApp() {
                   node: data,
                   x: n.x,
                   y: n.y,
+                  faded: fadedIds.has(data.id),
                   isDrop: dragState?.over === data.id,
                   isDragging: dragState?.id === data.id,
                   handlers: {
@@ -716,6 +863,13 @@ export default function TaskTreeApp() {
                 const dn = findNode(doc.children, dragState.id);
                 return dn ? <DragGhost node={dn} x={dragState.x} y={dragState.y} /> : null;
               })()}
+              {falling && (
+                <FallingLeaves
+                  key={falling.key}
+                  leaves={falling.leaves}
+                  fallDist={(size.h + 240) / view.k}
+                />
+              )}
               {celebration && (() => {
                 const n = layout.nodes.find((m) => m.d.depth > 0 && m.d.data.id === celebration.id);
                 return n ? (
@@ -767,8 +921,25 @@ export default function TaskTreeApp() {
           </div>
         )}
 
+        {/* fallen-leaves toast, with undo — litter has no per-item UI, so this
+            is the only way back for a leaf that shouldn't have dropped */}
+        {fell && !planted && (
+          <div className="tt-toast" key={fell.key}>
+            <span className="tt-toast-icon">🍂</span>
+            <span className="tt-toast-text">
+              {fell.count === 1
+                ? <>A finished leaf let go — it’s on the forest floor now.</>
+                : <>{fell.count} finished leaves let go — they’re on the forest floor now.</>}
+            </span>
+            <button className="tt-toast-undo" onClick={undoFall}>Undo</button>
+            {tab === "tree" && (
+              <button className="tt-toast-go" onClick={() => setTab("forest")}>View</button>
+            )}
+          </div>
+        )}
+
         {/* aged-out-to-backlog toast */}
-        {backlogged && !planted && (
+        {backlogged && !planted && !fell && (
           <div className="tt-toast" key={backlogged.key}>
             <span className="tt-toast-icon">🗂️</span>
             <span className="tt-toast-text">
@@ -789,7 +960,7 @@ export default function TaskTreeApp() {
         titleInputRef={titleInputRef}
         confirmDelete={confirmDelete}
         setConfirmDelete={setConfirmDelete}
-        onPatch={(patch) => setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, patch) }))}
+        onPatch={(patch) => setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, stampDone(patch)) }))}
         onAddChild={() => handleAddChild(selected.id)}
         onImportChild={() => { setImportTarget(selected.id); setImportText(""); setModal("import"); }}
         onDelete={() => handleDelete(selected.id)}

@@ -1,5 +1,5 @@
 import { statusByKey, typeByKey } from "./model.js";
-import { PILL_H, labelOf, pillW } from "./layout.js";
+import { PILL_H, labelOf, pillW, jitter } from "./layout.js";
 
 /* Stateless SVG renderers for everything drawn on the canvas. `handlers` is
    the pointer/click bundle built once per node in TaskTreeApp. */
@@ -22,12 +22,12 @@ export function RootHub({ x, y, isDrop, onAdd, label = "Add a top-level task" })
 
 // Inner node of a fully-done subtree, folded into a bare twig;
 // selecting expands it back to a pill.
-export function DoneTwig({ node, x, y, isDrop, isDragging, handlers }) {
+export function DoneTwig({ node, x, y, isDrop, isDragging, faded, handlers }) {
   return (
     <g
       data-node={node.id}
       transform={`translate(${x},${y})`}
-      className={`tt-twig ${isDragging ? "dragging" : ""}`}
+      className={`tt-twig ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""}`}
       {...handlers}
     >
       <g className="tt-twig-inner">
@@ -43,12 +43,12 @@ export function DoneTwig({ node, x, y, isDrop, isDragging, handlers }) {
 }
 
 // Done leaf task, folded into a real leaf; selecting expands it back to a pill.
-export function DoneLeaf({ node, x, y, isDrop, isDragging, handlers }) {
+export function DoneLeaf({ node, x, y, isDrop, isDragging, faded, handlers }) {
   return (
     <g
       data-node={node.id}
       transform={`translate(${x},${y}) rotate(90)`}
-      className={`tt-realleaf ${isDragging ? "dragging" : ""}`}
+      className={`tt-realleaf ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""}`}
       {...handlers}
     >
       <g className="tt-realleaf-inner">
@@ -63,7 +63,7 @@ export function DoneLeaf({ node, x, y, isDrop, isDragging, handlers }) {
   );
 }
 
-export function TaskPill({ node, x, y, isSel, isDone, isLeaf, isDrop, isDragging, handlers }) {
+export function TaskPill({ node, x, y, isSel, isDone, isLeaf, isDrop, isDragging, faded, handlers }) {
   const w = pillW(node);
   const st = node.status ? statusByKey[node.status] : null;
   const ty = node.type ? typeByKey[node.type] : null;
@@ -71,7 +71,7 @@ export function TaskPill({ node, x, y, isSel, isDone, isLeaf, isDrop, isDragging
     <g
       data-node={node.id}
       transform={`translate(${x - w / 2},${y - PILL_H / 2})`}
-      className={`tt-pill ${isSel ? "sel" : ""} ${isDone ? "done" : ""} ${isLeaf ? "leaf" : ""} ${node.important ? "imp" : ""} ${isDragging ? "dragging" : ""}`}
+      className={`tt-pill ${isSel ? "sel" : ""} ${isDone ? "done" : ""} ${isLeaf ? "leaf" : ""} ${node.important ? "imp" : ""} ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""}`}
       {...handlers}
     >
       <rect width={w} height={PILL_H} rx={11} className="tt-pill-bg" />
@@ -122,6 +122,53 @@ export function DragGhost({ node, x, y }) {
       {st && (
         <text x={w - 23} y={PILL_H / 2 + 1} dominantBaseline="middle" className="tt-pill-emoji">{st.emoji}</text>
       )}
+    </g>
+  );
+}
+
+/* ---------- done leaves letting go and falling off the tree ----------
+   A done leaf already renders as a real leaf, so nothing has to morph: the
+   leaf simply detaches and drifts down out of the view. Sway, spin and speed
+   are seeded from the node id, so a given task always falls the same way.
+   The tree behind them does not re-layout until the last one has landed. */
+
+// leaf blade and veins, matching DoneLeaf so the detach is seamless
+const FALL_BLADE = "M0,10 C-10,2 -10,-10 0,-18 C10,-10 10,2 0,10 Z";
+const FALL_VEIN = "M0,8 L0,-14 M0,2 Q-4,-1 -6,-5 M0,-2 Q4,-5 6,-9";
+
+export function FallingLeaves({ leaves, fallDist }) {
+  return (
+    <g className="tt-fallflock" style={{ pointerEvents: "none" }}>
+      {leaves.map((l) => {
+        const dur = 1.15 + (jitter(l.id, 3) + 0.5) * 0.6;
+        const sway = jitter(l.id, 4) * 64; // ±32px of side-to-side drift
+        const spin = 200 + (jitter(l.id, 5) + 0.5) * 260;
+        const swayDur = 0.7 + (jitter(l.id, 6) + 0.5) * 0.5;
+        const delay = `${l.delay}s`;
+        return (
+          <g key={l.id} transform={`translate(${l.x},${l.y})`}>
+            <g
+              className="tt-fallleaf"
+              style={{ "--fall": `${fallDist}px`, animationDuration: `${dur}s`, animationDelay: delay }}
+            >
+              <g
+                className="tt-fallleaf-sway"
+                style={{ "--sway": `${sway}px`, animationDuration: `${swayDur}s`, animationDelay: delay }}
+              >
+                <g
+                  className="tt-fallleaf-spin"
+                  style={{ "--spin": `${spin}deg`, animationDuration: `${dur}s`, animationDelay: delay }}
+                >
+                  <g transform="rotate(90)">
+                    <path d={FALL_BLADE} className="tt-realleaf-blade" />
+                    <path d={FALL_VEIN} className="tt-realleaf-vein" />
+                  </g>
+                </g>
+              </g>
+            </g>
+          </g>
+        );
+      })}
     </g>
   );
 }

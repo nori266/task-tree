@@ -414,6 +414,49 @@
   line-height: 1.5;
 }
 
+/* fallen leaves resting on the forest floor */
+.ff-litter { margin: 0 22px 20px; }
+.ff-litter-svg {
+  display: block; width: 100%; border-radius: 14px;
+  background: linear-gradient(180deg, rgba(201,177,137,.10) 0%, rgba(160,141,95,.24) 100%);
+}
+.ff-litterleaf { stroke: rgba(51,64,58,.13); stroke-width: .5; }
+.ff-litter-label {
+  display: block; text-align: center; margin-top: 7px;
+  color: var(--muted); font-size: 11.5px;
+}
+
+/* a done task fading with age: finished yesterday or earlier, on its way off
+   the tree. Two discrete steps, because the clock only resolves to days. */
+.tt-realleaf.faded, .tt-twig.faded { opacity: .42; }
+.tt-pill.faded { opacity: .46; }
+.tt-realleaf.faded .tt-realleaf-blade { fill: #CDB68F; stroke: #A08D5F; }
+.tt-realleaf.faded:hover .tt-realleaf-blade { fill: #D9C4A1; }
+.tt-twig.faded .tt-twig-leaf { fill: #CDB68F; stroke: #A08D5F; }
+.tt-link.faded { stroke: #C9B189; opacity: .55; }
+
+/* …and letting go: drifting down out of the view while the tree behind it
+   holds its layout until the last leaf has landed */
+.tt-fallleaf { animation: tt-fall linear both; }
+.tt-fallleaf-sway { animation: tt-fall-sway ease-in-out infinite alternate; }
+.tt-fallleaf-spin {
+  animation: tt-fall-spin linear both;
+  transform-box: fill-box; transform-origin: 50% 50%;
+}
+@keyframes tt-fall {
+  from { transform: translateY(0); opacity: 1; }
+  72% { opacity: 1; }
+  to { transform: translateY(var(--fall)); opacity: 0; }
+}
+@keyframes tt-fall-sway {
+  from { transform: translateX(calc(var(--sway) * -1)); }
+  to { transform: translateX(var(--sway)); }
+}
+@keyframes tt-fall-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(var(--spin)); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tt-root * { transition-duration: 0s !important; animation-duration: 0s !important; }
 }

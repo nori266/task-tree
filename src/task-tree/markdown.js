@@ -45,14 +45,18 @@ function stripBold(title) {
 // migration time, so nothing ages into the Backlog on the first load.
 export function migrateNodes(nodes, now = Date.now()) {
   return nodes.map((n) => {
-    let { title, status = null, type = null, important = false, createdAt } = n;
+    let { title, status = null, type = null, important = false, createdAt, doneAt } = n;
     if (status === "call") { type = type ?? "call"; status = null; }
     if (status && !statusByKey[status]) status = null;
     const bolded = stripBold(title);
     if (bolded !== null) { important = true; title = bolded || "Untitled"; }
     if (typeof createdAt !== "number") createdAt = now;
+    // Tasks finished before leaf-fall existed start their fade clock now, so
+    // the first open after the update doesn't shower away the whole history.
+    if (status !== "done") doneAt = null;
+    else if (typeof doneAt !== "number") doneAt = now;
     return {
-      ...n, title, status, type, important, createdAt,
+      ...n, title, status, type, important, createdAt, doneAt,
       children: migrateNodes(n.children || [], now),
     };
   });

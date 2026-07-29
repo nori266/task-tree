@@ -9,8 +9,9 @@ export const pillW = (n) =>
   Math.max(64, 26 + labelOf(n.title).length * (n.important ? 7.6 : 7.0) + (n.type ? 24 : 0) + (n.status ? 22 : 0));
 
 // Deterministic pseudo-random in [-0.5, 0.5) seeded by node id, so the
-// organic jitter is stable across renders.
-function jitter(id, salt = 0) {
+// organic jitter is stable across renders — and so a given leaf always falls
+// the same way and always lands in the same spot on the Forest floor.
+export function jitter(id, salt = 0) {
   let h = 2166136261 ^ salt;
   for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
   return ((h >>> 0) % 1000) / 1000 - 0.5;

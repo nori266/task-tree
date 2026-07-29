@@ -19,7 +19,8 @@ export const typeByKey = Object.fromEntries(TYPES.map((t) => [t.key, t]));
 let idCounter = 1;
 const nid = () => `n${Date.now().toString(36)}_${idCounter++}`;
 export const newNode = (title = "New task", status = null, type = null, important = false) => ({
-  id: nid(), title, desc: "", status, type, important, createdAt: Date.now(), children: [],
+  id: nid(), title, desc: "", status, type, important, createdAt: Date.now(),
+  doneAt: status === "done" ? Date.now() : null, children: [],
 });
 
 /* ---------- immutable tree helpers ---------- */
