@@ -11,6 +11,10 @@ import {
 import Panel from "./Panel.jsx";
 import { ImportModal, ExportModal } from "./Modals.jsx";
 import Forest from "./Forest.jsx";
+import Backlog from "./Backlog.jsx";
+import {
+  sweepBacklog, mergeIntoBacklog, takeFromBacklog, graftIntoTree, countBacklogged,
+} from "./backlog.js";
 import "./task-tree.css";
 
 /* ────────────────────────────────────────────────
@@ -23,8 +27,11 @@ const CELEBRATE_MIN_SUBNODES = 10;
 export default function TaskTreeApp() {
   const [doc, setDoc] = useState(null); // {title, children}
   const [forest, setForest] = useState([]); // graduated achievements, newest first
-  const [tab, setTab] = useState("tree"); // 'tree' | 'forest'
+  const [backlog, setBacklog] = useState([]); // mirror tree of aged-out branches
+  const [tab, setTab] = useState("tree"); // 'tree' | 'forest' | 'backlog'
   const [planted, setPlanted] = useState(null); // {trees, key} undo toast
+  const [backlogged, setBacklogged] = useState(null); // {count, title, key} toast
+  const [sweepTick, setSweepTick] = useState(0); // re-checks ages while the app stays open
   const [selectedId, setSelectedId] = useState(null);
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
@@ -51,6 +58,7 @@ export default function TaskTreeApp() {
   const prevTopDone = useRef(null); // ids of top-level branches that already graduated
   const celebrationTimer = useRef(null);
   const plantedTimer = useRef(null);
+  const backloggedTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
   const syncTimer = useRef(null);
 
@@ -75,8 +83,16 @@ export default function TaskTreeApp() {
           if (Array.isArray(parsed)) setForest(parsed);
         }
       } catch (e) { /* no forest yet */ }
+      try {
+        const bl = await window.storage.get("tasktree:backlog");
+        if (bl?.value) {
+          const parsed = JSON.parse(bl.value);
+          if (Array.isArray(parsed)) setBacklog(migrateNodes(parsed));
+        }
+      } catch (e) { /* no backlog yet */ }
       loaded.current = true;
       setStructureRev((r) => r + 1);
+      setSweepTick((x) => x + 1); // age check now that the saved doc is in place
     })();
   }, []);
 
@@ -101,6 +117,62 @@ export default function TaskTreeApp() {
     if (!loaded.current) return;
     window.storage.set("tasktree:forest", JSON.stringify(forest)).catch(() => {});
   }, [forest]);
+
+  /* ----- persist the backlog ----- */
+  useEffect(() => {
+    if (!loaded.current) return;
+    window.storage.set("tasktree:backlog", JSON.stringify(backlog)).catch(() => {});
+  }, [backlog]);
+
+  /* ----- age untouched leaves out of the Tree into the Backlog -----
+     A leaf with no status that has sat in the Tree for a week moves to the
+     Backlog together with a copy of its ancestors; a parent left childless by
+     the move follows it. Runs on every doc change (so a cascade settles at
+     once) and on a timer, so a long-open tab still ages tasks out. */
+  useEffect(() => {
+    if (!loaded.current || !doc) return;
+    const now = Date.now();
+    const { children, moved } = sweepBacklog(doc.children, now);
+    if (!moved.length) return;
+    const movedIds = new Set(moved.map((m) => m.node.id));
+    setDoc((d) => ({ ...d, children }));
+    setBacklog((b) => mergeIntoBacklog(b, moved, now));
+    if (focusId && movedIds.has(focusId)) setFocusId(null);
+    setSelectedId((s) => (s && movedIds.has(s) ? null : s));
+    clearTimeout(backloggedTimer.current);
+    setBacklogged({ count: moved.length, title: moved[moved.length - 1].node.title, key: now });
+    backloggedTimer.current = setTimeout(() => setBacklogged(null), 6500);
+    bumpStructure();
+  }, [doc, sweepTick]); // eslint-disable-line
+
+  useEffect(() => {
+    const t = setInterval(() => setSweepTick((x) => x + 1), 10 * 60 * 1000);
+    return () => { clearInterval(t); clearTimeout(backloggedTimer.current); };
+  }, []);
+
+  /* ----- move a branch from the Backlog back into the Tree ----- */
+  const returnFromBacklog = (id) => {
+    const taken = takeFromBacklog(backlog, id, Date.now());
+    if (!taken) return;
+    const { children: rest, node, ancestorIds, wasStub } = taken;
+    setBacklog(rest);
+    setDoc((d) => {
+      // a stub is still in the Tree itself, so only its backlogged children return
+      const grafts = wasStub ? node.children : [node];
+      const under = wasStub ? [...ancestorIds, node.id] : ancestorIds;
+      return {
+        ...d,
+        children: grafts.reduce((cs, g) => graftIntoTree(cs, under, g), d.children),
+      };
+    });
+    setTab("tree");
+    bumpStructure();
+  };
+
+  const deleteFromBacklog = (id) => {
+    const taken = takeFromBacklog(backlog, id, Date.now());
+    if (taken) setBacklog(taken.children);
+  };
 
   /* ----- resize ----- */
   useEffect(() => {
@@ -490,6 +562,7 @@ export default function TaskTreeApp() {
   const selected = doc && selectedId ? findNode(doc.children, selectedId) : null;
   const total = doc ? countNodes(doc.children) : 0;
   const done = doc ? countDone(doc.children) : 0;
+  const backlogCount = countBacklogged(backlog);
 
   /* ────────────────── render ────────────────── */
 
@@ -512,6 +585,13 @@ export default function TaskTreeApp() {
               onClick={() => setTab("forest")}
             >
               🌲 Forest{forest.length ? ` (${forest.length})` : ""}
+            </button>
+            <button
+              className={`tt-tab ${tab === "backlog" ? "on" : ""}`}
+              onClick={() => setTab("backlog")}
+              title="Tasks that sat untouched in the Tree for a week"
+            >
+              🗂️ Backlog{backlogCount ? ` (${backlogCount})` : ""}
             </button>
           </div>
           {tab === "tree" && (
@@ -553,6 +633,14 @@ export default function TaskTreeApp() {
       {/* canvas */}
       <div className="tt-canvas" ref={containerRef}>
         {tab === "forest" && <Forest achievements={forest} onReturn={returnFromForest} />}
+        {tab === "backlog" && (
+          <Backlog
+            nodes={backlog}
+            size={size}
+            onReturn={returnFromBacklog}
+            onDelete={deleteFromBacklog}
+          />
+        )}
         {tab === "tree" && (
         <>
         <div
@@ -675,6 +763,21 @@ export default function TaskTreeApp() {
             <button className="tt-toast-undo" onClick={undoPlant}>Undo</button>
             {tab === "tree" && (
               <button className="tt-toast-go" onClick={() => setTab("forest")}>View</button>
+            )}
+          </div>
+        )}
+
+        {/* aged-out-to-backlog toast */}
+        {backlogged && !planted && (
+          <div className="tt-toast" key={backlogged.key}>
+            <span className="tt-toast-icon">🗂️</span>
+            <span className="tt-toast-text">
+              {backlogged.count === 1
+                ? <>“{labelOf(backlogged.title || "Untitled task")}” sat untouched for a week — moved to your Backlog.</>
+                : <>{backlogged.count} untouched tasks sat for a week — moved to your Backlog.</>}
+            </span>
+            {tab !== "backlog" && (
+              <button className="tt-toast-go" onClick={() => setTab("backlog")}>View</button>
             )}
           </div>
         )}

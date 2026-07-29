@@ -40,15 +40,21 @@ function stripBold(title) {
 }
 
 // Migrate docs saved by earlier versions (status "call" → type, missing
-// type/important fields, literal ** markers left in stored titles).
-export function migrateNodes(nodes) {
+// type/important fields, literal ** markers left in stored titles, no
+// createdAt). Nodes saved before created times existed are stamped with the
+// migration time, so nothing ages into the Backlog on the first load.
+export function migrateNodes(nodes, now = Date.now()) {
   return nodes.map((n) => {
-    let { title, status = null, type = null, important = false } = n;
+    let { title, status = null, type = null, important = false, createdAt } = n;
     if (status === "call") { type = type ?? "call"; status = null; }
     if (status && !statusByKey[status]) status = null;
     const bolded = stripBold(title);
     if (bolded !== null) { important = true; title = bolded || "Untitled"; }
-    return { ...n, title, status, type, important, children: migrateNodes(n.children || []) };
+    if (typeof createdAt !== "number") createdAt = now;
+    return {
+      ...n, title, status, type, important, createdAt,
+      children: migrateNodes(n.children || [], now),
+    };
   });
 }
 
