@@ -296,8 +296,8 @@ export default function TaskTreeApp() {
     }));
     setForest((f) => [...trees, ...f]);
     // applyFall, not a plain filter: the branch may be nested, and a parent
-    // left childless by its departure inherits `done` instead of looking like
-    // untouched work to the Backlog sweep
+    // left childless by its departure needs its week in view as a newly
+    // actionable leaf rather than aging out on the clock it had as a branch
     setDoc((d) => ({ ...d, children: applyFall(d.children, freshIds, now) }));
     if (focusId && freshIds.has(focusId)) setFocusId(null);
     setSelectedId((s) => (s && freshIds.has(s) ? null : s));

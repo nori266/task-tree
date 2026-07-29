@@ -78,11 +78,16 @@ export function collectFallen(children, today) {
 /* Removes `ids` from the tree. Applied when leaves land, and also when a
    branch graduates to the Forest — both are "this subtree left the Tree".
 
-   A parent left childless by the removal that never had a status of its own
-   inherits `done`: all of its children were finished, so the scaffolding is
-   finished too. Without this it would look like an untouched leaf and the
-   Backlog sweep would claim it as abandoned work, only for it to resurface
-   later as stale. */
+   A parent left childless by the removal keeps whatever status it had. It is
+   never completed on its own: the parent's title is a task in its own right,
+   and finishing every task *under* it says nothing about that. Marking it done
+   here would start it fading and drop work nobody had finished.
+
+   So a statusless parent simply becomes an ordinary actionable leaf — and gets
+   a fresh createdAt, because it only just arrived at the actionable edge of the
+   tree. That gives it a full week in view before the Backlog's staleness sweep
+   can claim it, rather than aging out on a clock that started when it was still
+   a branch nobody was expected to act on. */
 export function applyFall(children, ids, now) {
   const walk = (nodes) => {
     const out = [];
@@ -91,7 +96,7 @@ export function applyFall(children, ids, now) {
       const had = !!n.children?.length;
       const kids = had ? walk(n.children) : [];
       let next = { ...n, children: kids };
-      if (had && !kids.length && !next.status) next = { ...next, status: "done", doneAt: now };
+      if (had && !kids.length && !next.status) next = { ...next, createdAt: now };
       out.push(next);
     }
     return out;
