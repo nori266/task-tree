@@ -1,17 +1,17 @@
 /* Leaf-fall: the third way a task leaves the Tree.
 
-   A done leaf is bright the day it's finished, faded the next day, and on the
-   day after that it lets go and falls — down out of the tree and onto the
-   Forest floor as litter. Done work is never silently deleted: the leaf is
-   still there, on the ground, as proof the day happened.
+   A done leaf stays bright for a week after it's finished, fades once it's a
+   week old, and a week after that it lets go and falls — down out of the tree
+   and onto the Forest floor as litter. Done work is never silently deleted: the
+   leaf is still there, on the ground, as proof the day happened.
 
    Ages are counted in local calendar days, not elapsed hours, so "yesterday"
    means yesterday however late you worked. Falling only ever happens on a
    sweep (app open, or the first return on a new day) so leaves never move
    under the cursor mid-session. */
 
-export const FADE_DAY = 1; // done yesterday → faded
-export const FALL_DAY = 2; // done the day before that → falls
+export const FADE_DAY = 7; // done a week ago → faded
+export const FALL_DAY = 14; // done two weeks ago → falls
 
 /* Whole days since the epoch for the *local* calendar day of `ts`. Built from
    the local Y/M/D rather than dividing the timestamp, so a DST shift can't
