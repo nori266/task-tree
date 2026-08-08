@@ -42,6 +42,8 @@ Butterflies now mark the finished branches *below* the graduation threshold (4�
 
 **Drag-to-reparent.** Press-drag a node to lift it into a ghost; valid drop targets highlight with a dashed ring (a node can't be dropped on itself or its descendants). Dropping moves the node **with its whole subtree**; dropping on the 🌳 hub makes it top-level; releasing over empty space cancels. A plain click still just selects. Reparenting appends as the target's last child (no sibling ordering yet) and does not open the panel.
 
+**Undo / redo.** `⌘Z` / `Ctrl+Z` reverses the last action, `⇧⌘Z` / `Ctrl+Y` reapplies it; both also sit in the top bar. History holds the **last 100 actions** (`HISTORY_LIMIT`), so up to 100 consecutive edits can be undone before the oldest step drops off. Each step snapshots all four stores (Tree, Forest, Backlog, litter) together, so a multi-store action reverses atomically. Consecutive text edits to one task fold into a single step; the time-driven lifecycle events (graduation, leaf-fall, backlog aging) keep their own undo toasts instead. History is in-memory only and clears on reload. While a text field is focused the shortcut yields to the browser's native caret-level undo.
+
 **Visual language.** Pills show `[type emoji] title [status emoji]` with a thin status-colored bar (only when a status is set); done tasks fade with strikethrough; a small dot marks nodes that have a description; a legend explains both emoji groups. Progress counter (`done/total`) in the top bar.
 
 **Persistence.** The whole document auto-saves (debounced) as JSON to `window.storage` under key `tasktree:doc`, with a save indicator. On load, docs from older schema versions are migrated (`status: "call"` → `type: "call"`, missing `type` field added).
@@ -62,5 +64,4 @@ Prioritized for ADHD benefit:
 1. **Focus mode / branch zoom** — double-click makes a node the temporary root; its subtree fills the screen, breadcrumb to climb back (targets overwhelm; highest expected impact).
 2. **"Next up" spotlight** — dim everything except ⏭️/💻 nodes (or the shallowest unblocked leaf) to answer "what do I do now?" (targets task initiation).
 3. **Completion feedback** — fold-closed animation on done, progress rings on parents, offer to complete a parent when all children are done (immediate reward).
-4. **Undo** — snapshot stack of the doc; important now that mis-drops and subtree deletes are possible.
-5. **Collapse/expand branches** with hidden-count badges; **sibling reordering** during drag (drop into gaps between pills); animated layout transitions; multiple named trees.
+4. **Collapse/expand branches** with hidden-count badges; **sibling reordering** during drag (drop into gaps between pills); animated layout transitions; multiple named trees.

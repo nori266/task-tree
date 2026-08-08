@@ -28,6 +28,9 @@ import "./task-tree.css";
 const CELEBRATE_MIN_SUBNODES = 10; // subnodes that earn a branch a tree in the Forest
 const BUTTERFLY_MIN_SUBNODES = 4;  // smaller finished branches erode, so they get butterflies
 
+const HISTORY_LIMIT = 100;   // undo depth; older snapshots drop off the bottom
+const EDIT_COALESCE_MS = 700; // consecutive text edits to one task fold into one undo step
+
 export default function TaskTreeApp() {
   const [doc, setDoc] = useState(null); // {title, children}
   const [forest, setForest] = useState([]); // graduated achievements, newest first
@@ -55,6 +58,8 @@ export default function TaskTreeApp() {
   const [syncFileName, setSyncFileName] = useState(null);
   const [structureRev, setStructureRev] = useState(0);
   const [size, setSize] = useState({ w: 1000, h: 700 });
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const containerRef = useRef(null);
   const svgWrapRef = useRef(null);
@@ -74,6 +79,20 @@ export default function TaskTreeApp() {
   const fellTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
   const syncTimer = useRef(null);
+
+  /* ----- undo/redo -----
+     Every undoable action snapshots the four persistent stores (doc, forest,
+     backlog, litter) before it runs. Snapshots hold references, not clones:
+     all mutations are immutable (model.js), so a captured store is never
+     altered underneath us. Transient UI state (selection, focus, view, toasts)
+     is deliberately outside history — undo restores data, not cursor position.
+     The time-driven lifecycle events (graduation, leaf-fall, backlog aging)
+     keep their own toast-undos and are not pushed here; a global undo after one
+     of them rewinds to the last user-committed state, which stays consistent. */
+  const liveState = useRef({ doc: null, forest: [], backlog: [], litter: [] });
+  const past = useRef([]);   // undo stack, newest last
+  const future = useRef([]); // redo stack, newest last
+  const editCoalesce = useRef({ id: null, at: 0 });
 
   /* ----- load ----- */
   useEffect(() => {
@@ -186,6 +205,7 @@ export default function TaskTreeApp() {
   const returnFromBacklog = (id) => {
     const taken = takeFromBacklog(backlog, id, Date.now());
     if (!taken) return;
+    commit();
     const { children: rest, node, ancestorIds, wasStub } = taken;
     setBacklog(rest);
     setDoc((d) => {
@@ -203,7 +223,9 @@ export default function TaskTreeApp() {
 
   const deleteFromBacklog = (id) => {
     const taken = takeFromBacklog(backlog, id, Date.now());
-    if (taken) setBacklog(taken.children);
+    if (!taken) return;
+    commit();
+    setBacklog(taken.children);
   };
 
   /* ----- resize ----- */
@@ -327,6 +349,7 @@ export default function TaskTreeApp() {
   const returnFromForest = (id) => {
     const achievement = forest.find((a) => a.id === id);
     if (!achievement) return;
+    commit();
     setForest((f) => f.filter((a) => a.id !== id));
     setDoc((d) => ({ ...d, children: [...d.children, achievement.tree] }));
     // it's still fully done and big — record it so it isn't graduated straight back
@@ -532,8 +555,95 @@ export default function TaskTreeApp() {
   /* ----- actions ----- */
   const bumpStructure = () => setStructureRev((r) => r + 1);
 
+  /* keep a live mirror of the undoable stores so a snapshot taken at action
+     time never captures a stale closure value */
+  useEffect(() => {
+    liveState.current = { doc, forest, backlog, litter };
+  }, [doc, forest, backlog, litter]);
+
+  const snapshot = () => ({ ...liveState.current });
+
+  const restore = (snap) => {
+    setDoc(snap.doc);
+    setForest(snap.forest);
+    setBacklog(snap.backlog);
+    setLitter(snap.litter);
+    // a restored store may no longer contain what the user had selected/focused
+    setSelectedId(null);
+    setLinkingId(null);
+    setFocusId(null);
+    setDragState(null);
+    bumpStructure();
+  };
+
+  // Push the pre-action state onto the undo stack. Call before mutating.
+  const commit = () => {
+    past.current.push(snapshot());
+    if (past.current.length > HISTORY_LIMIT) past.current.shift();
+    future.current = [];
+    editCoalesce.current = { id: null, at: 0 };
+    setCanUndo(true);
+    setCanRedo(false);
+  };
+
+  // Like commit(), but folds a run of edits to the same task into one step, so
+  // typing a title isn't one undo per keystroke.
+  const commitTextEdit = () => {
+    const now = Date.now();
+    const c = editCoalesce.current;
+    if (c.id === selectedId && now - c.at < EDIT_COALESCE_MS) {
+      c.at = now; // extend the run; the snapshot already on the stack stands
+      return;
+    }
+    commit();
+    editCoalesce.current = { id: selectedId, at: now };
+  };
+
+  const undo = () => {
+    if (!past.current.length) return;
+    future.current.push(snapshot());
+    restore(past.current.pop());
+    editCoalesce.current = { id: null, at: 0 };
+    setCanUndo(past.current.length > 0);
+    setCanRedo(true);
+  };
+
+  const redo = () => {
+    if (!future.current.length) return;
+    past.current.push(snapshot());
+    restore(future.current.pop());
+    editCoalesce.current = { id: null, at: 0 };
+    setCanRedo(future.current.length > 0);
+    setCanUndo(true);
+  };
+
+  /* cmd/ctrl+Z undo, cmd/ctrl+shift+Z or ctrl+Y redo. Ignored while a text
+     field is focused, so the field's own caret-level undo keeps working; blur
+     it and the shortcut drives the task-level history instead. undo/redo touch
+     only refs and stable setters, so binding once is safe. */
+  useEffect(() => {
+    const onKey = (e) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const t = e.target;
+      const tag = t?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || t?.isContentEditable) return;
+      const k = e.key.toLowerCase();
+      if (k === "z") {
+        e.preventDefault();
+        if (e.shiftKey) redo(); else undo();
+      } else if (k === "y") {
+        e.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []); // eslint-disable-line
+
   const handleAddChild = (parentId) => {
     const child = newNode();
+    commit();
     setDoc((d) =>
       parentId === "__root"
         ? { ...d, children: [...d.children, child] }
@@ -549,6 +659,7 @@ export default function TaskTreeApp() {
   };
 
   const handleDelete = (id) => {
+    commit();
     if (id === focusId) setFocusId(null);
     if (id === linkingId) setLinkingId(null);
     setDoc((d) => ({ ...d, children: pruneDeps(removeNode(d.children, id)) }));
@@ -565,11 +676,14 @@ export default function TaskTreeApp() {
     const dependent = linkingId;
     setLinkingId(null);
     if (!dependent || dependent === blockerId) return;
+    commit();
     setDoc((d) => ({ ...d, children: addDep(d.children, dependent, blockerId) }));
   };
 
-  const handleRemoveDep = (id, blockerId) =>
+  const handleRemoveDep = (id, blockerId) => {
+    commit();
     setDoc((d) => ({ ...d, children: removeDep(d.children, id, blockerId) }));
+  };
 
   /* ----- drag-to-reparent ----- */
 
@@ -628,10 +742,11 @@ export default function TaskTreeApp() {
   const handleReparent = (nodeId, targetId) => {
     // in focus mode the hub stands in for the focused node
     const realTarget = targetId === "__root" && focusId ? focusId : targetId;
+    if (nodeId === realTarget || !findNode(doc.children, nodeId)) return;
+    commit();
     setDoc((d) => {
-      const subtree = findNode(d.children, nodeId);
-      if (!subtree || nodeId === realTarget) return d;
       const rest = removeNode(d.children, nodeId);
+      const subtree = findNode(d.children, nodeId);
       const children =
         realTarget === "__root" ? [...rest, subtree] : addChild(rest, realTarget, subtree);
       return { ...d, children };
@@ -642,6 +757,7 @@ export default function TaskTreeApp() {
   const handleImport = (mode) => {
     const roots = parseMarkdown(importText);
     if (!roots.length) return;
+    commit();
     setDoc((d) => {
       if (importTarget) {
         const node = findNode(d.children, importTarget);
@@ -787,6 +903,18 @@ export default function TaskTreeApp() {
           )}
           {tab === "tree" && (
             <>
+              <button
+                className="tt-btn ghost"
+                onClick={undo}
+                disabled={!canUndo}
+                title="Undo (⌘Z)"
+              >↶ Undo</button>
+              <button
+                className="tt-btn ghost"
+                onClick={redo}
+                disabled={!canRedo}
+                title="Redo (⇧⌘Z)"
+              >↷ Redo</button>
               <button className="tt-btn ghost" onClick={fitView} title="Fit tree to screen">Fit</button>
               <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); setSyncState("idle"); }}>Export</button>
               <button className="tt-btn solid" onClick={() => { setImportTarget(null); setImportText(""); setModal("import"); }}>Import .md</button>
@@ -1014,7 +1142,11 @@ export default function TaskTreeApp() {
         titleInputRef={titleInputRef}
         confirmDelete={confirmDelete}
         setConfirmDelete={setConfirmDelete}
-        onPatch={(patch) => setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, stampDone(patch)) }))}
+        onPatch={(patch) => {
+          const textOnly = Object.keys(patch).every((k) => k === "title" || k === "desc");
+          if (textOnly) commitTextEdit(); else commit();
+          setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, stampDone(patch)) }));
+        }}
         onAddChild={() => handleAddChild(selected.id)}
         onImportChild={() => { setImportTarget(selected.id); setImportText(""); setModal("import"); }}
         onDelete={() => handleDelete(selected.id)}
