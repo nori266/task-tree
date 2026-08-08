@@ -45,6 +45,7 @@ export default function TaskTreeApp() {
   const [today, setToday] = useState(() => dayIndex(Date.now())); // local calendar day
   const [sweepTick, setSweepTick] = useState(0); // re-checks ages while the app stays open
   const [selectedId, setSelectedId] = useState(null);
+  const [cursorId, setCursorId] = useState(null); // keyboard navigation cursor (ring only, no panel)
   const [linkingId, setLinkingId] = useState(null); // dependent node awaiting a blocker pick
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
@@ -539,6 +540,7 @@ export default function TaskTreeApp() {
   const onPointerUp = () => {
     if (drag.current && !drag.current.moved) {
       setSelectedId(null);
+      setCursorId(null);
       setLinkingId(null);
     }
     drag.current = null;
@@ -570,6 +572,7 @@ export default function TaskTreeApp() {
     setLitter(snap.litter);
     // a restored store may no longer contain what the user had selected/focused
     setSelectedId(null);
+    setCursorId(null);
     setLinkingId(null);
     setFocusId(null);
     setDragState(null);
@@ -650,6 +653,7 @@ export default function TaskTreeApp() {
         : { ...d, children: addChild(d.children, parentId, child) }
     );
     setSelectedId(child.id);
+    setCursorId(child.id);
     setConfirmDelete(false);
     // no bumpStructure(): adding a sub-task must not re-fit the view
     setTimeout(() => {
@@ -667,6 +671,107 @@ export default function TaskTreeApp() {
     setConfirmDelete(false);
     bumpStructure();
   };
+
+  /* ----- keyboard navigation -----
+     Arrows walk the visible tree by tree-relationship (right = into first
+     child, left = up to parent, up/down = siblings). A lightweight cursor ring
+     tracks the current node without opening the panel; Enter opens it (and
+     toggles it shut), Tab adds a sub-task under it, Esc backs out. The panel
+     follows the cursor while it's open, so arrowing browses details. Keys are
+     inert while a text field is focused and while a dependency link is being
+     drawn, and modifier chords (undo/redo) are left to their own handler. */
+  useEffect(() => {
+    if (tab !== "tree") return;
+    const byId = new Map(
+      layout.nodes.filter((n) => n.d.depth > 0).map((n) => [n.d.data.id, n.d])
+    );
+    // finished work receding off the tree — done leaves and every node inside a
+    // fully-done branch (rendered as twigs) — isn't a navigation target; the
+    // cursor skips over it to the next live node
+    const skip = (d) =>
+      doneBranchIds.has(d.data.id) ||
+      (d.data.status === "done" && (!d.data.children || d.data.children.length === 0));
+    const firstTopId = () => {
+      let best = null;
+      for (const n of layout.nodes) {
+        if (n.d.depth === 0 || skip(n.d)) continue;
+        if (!best || n.d.depth < best.d.depth || (n.d.depth === best.d.depth && n.y < best.y)) best = n;
+      }
+      return best?.d.data.id ?? null;
+    };
+    const move = (dir) => {
+      const cur = cursorId ? byId.get(cursorId) : null;
+      let next = null;
+      if (!cur) next = firstTopId();
+      else if (dir === "right") next = cur.children?.find((c) => !skip(c))?.data.id ?? null;
+      else if (dir === "left") next = cur.parent && cur.parent.depth > 0 ? cur.parent.data.id : null;
+      else {
+        // walk the whole same-depth column by vertical position, so up/down
+        // crosses from one parent's children into the next parent's, skipping
+        // any finished (done leaf / done branch) nodes along the way
+        const col = layout.nodes
+          .filter((n) => n.d.depth === cur.depth)
+          .sort((a, b) => a.y - b.y);
+        const i = col.findIndex((n) => n.d.data.id === cursorId);
+        const step = dir === "down" ? 1 : -1;
+        for (let k = i + step; k >= 0 && k < col.length; k += step) {
+          if (!skip(col[k].d)) { next = col[k].d.data.id; break; }
+        }
+      }
+      if (!next) return;
+      setCursorId(next);
+      setConfirmDelete(false);
+      setSelectedId((s) => (s ? next : s)); // panel, if open, follows the cursor
+    };
+    const onKey = (e) => {
+      const t = e.target, tag = t?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+          || tag === "BUTTON" || tag === "A" || t?.isContentEditable) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (linkingId) return;
+      switch (e.key) {
+        case "ArrowRight": e.preventDefault(); move("right"); break;
+        case "ArrowLeft": e.preventDefault(); move("left"); break;
+        case "ArrowUp": e.preventDefault(); move("up"); break;
+        case "ArrowDown": e.preventDefault(); move("down"); break;
+        case "Enter": {
+          e.preventDefault();
+          const id = cursorId ?? firstTopId();
+          if (!id) break;
+          if (!cursorId) setCursorId(id);
+          setSelectedId((s) => (s === id ? null : id));
+          setConfirmDelete(false);
+          break;
+        }
+        case "Tab":
+          e.preventDefault();
+          handleAddChild(cursorId ?? focusId ?? "__root");
+          break;
+        case "Escape":
+          if (selectedId) setSelectedId(null);
+          else setCursorId(null);
+          break;
+        default: break;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [tab, cursorId, selectedId, focusId, linkingId, layout, doneBranchIds]); // eslint-disable-line
+
+  /* ----- keep the cursor on screen: pan just enough when it lands outside ----- */
+  useEffect(() => {
+    if (!cursorId) return;
+    const n = layout.nodes.find((m) => m.d.depth > 0 && m.d.data.id === cursorId);
+    if (!n) return;
+    setView((v) => {
+      const m = 90;
+      const sx = n.x * v.k + v.x, sy = n.y * v.k + v.y;
+      let nx = v.x, ny = v.y;
+      if (sx < m) nx += m - sx; else if (sx > size.w - m) nx -= sx - (size.w - m);
+      if (sy < m) ny += m - sy; else if (sy > size.h - m) ny -= sy - (size.h - m);
+      return nx === v.x && ny === v.y ? v : clampView({ ...v, x: nx, y: ny });
+    });
+  }, [cursorId, layout, size, clampView]);
 
   /* ----- blocked-by dependency links ----- */
   const startLinking = (id) => setLinkingId((cur) => (cur === id ? null : id));
@@ -994,6 +1099,7 @@ export default function TaskTreeApp() {
                 // deliberately keeps its old layout until they land
                 if (falling?.ids.has(data.id)) return null;
                 const isSel = data.id === selectedId;
+                const isCursor = data.id === cursorId;
                 const isDone = data.status === "done";
                 const isLeaf = !data.children || data.children.length === 0;
                 const shared = {
@@ -1001,6 +1107,7 @@ export default function TaskTreeApp() {
                   x: n.x,
                   y: n.y,
                   faded: fadedIds.has(data.id),
+                  isCursor,
                   isDrop: dragState?.over === data.id,
                   isDragging: dragState?.id === data.id,
                   handlers: {
@@ -1013,6 +1120,7 @@ export default function TaskTreeApp() {
                       nodeDrag.current = null;
                       if (linkingId) { handleLink(data.id); return; }
                       setSelectedId(data.id);
+                      setCursorId(data.id);
                       setConfirmDelete(false);
                     },
                   },

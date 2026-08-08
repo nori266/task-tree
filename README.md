@@ -40,6 +40,19 @@ Butterflies now mark the finished branches *below* the graduation threshold (4�
 
 **Node editing.** Click a node → side panel (bottom sheet on mobile) to edit title and description, set type (none / call / coding), set status (none + the six statuses), add a sub-task, or delete the subtree (two-step confirm). The 🌳 root hub adds top-level tasks.
 
+**Keyboard navigation.** Move around the tree without touching the mouse. A dashed **cursor ring** marks the current node and moves by tree relationship; opening it is a separate, deliberate step, so scanning the tree stays calm and no panel flashes open as you move.
+
+| Key | Action |
+| --- | --- |
+| `→` | into the first child (deeper) |
+| `←` | up to the parent (shallower) |
+| `↑` / `↓` | previous / next node in the same-depth column (crosses from one parent's children into the next) |
+| `Enter` | open the cursor node's panel (same as clicking it); press again to close and return to the tree |
+| `Tab` | add a sub-task under the cursor, with the caret already in its title editor — type and press `Enter` to finalize |
+| `Esc` | close the panel, then clear the cursor |
+
+The panel *follows* the cursor while it's open, so arrowing browses details node by node. Navigation targets only **live** work: finished nodes receding off the Tree — done leaves and every node inside a fully-done branch (the twigs) — are skipped in every direction, so the cursor jumps straight to the next unfinished node. A done-status parent that still has live sub-tasks stays navigable, so you can reach its unfinished children. Keys are inert while a text field, button, or link is focused (so typing a title and the `⌘Z` shortcuts keep working), and while a dependency link is being drawn. The view pans just enough to keep the cursor on screen when it moves out of view. The first arrow with no cursor set lands on the top-most live root task.
+
 **Drag-to-reparent.** Press-drag a node to lift it into a ghost; valid drop targets highlight with a dashed ring (a node can't be dropped on itself or its descendants). Dropping moves the node **with its whole subtree**; dropping on the 🌳 hub makes it top-level; releasing over empty space cancels. A plain click still just selects. Reparenting appends as the target's last child (no sibling ordering yet) and does not open the panel.
 
 **Undo / redo.** `⌘Z` / `Ctrl+Z` reverses the last action, `⇧⌘Z` / `Ctrl+Y` reapplies it; both also sit in the top bar. History holds the **last 100 actions** (`HISTORY_LIMIT`), so up to 100 consecutive edits can be undone before the oldest step drops off. Each step snapshots all four stores (Tree, Forest, Backlog, litter) together, so a multi-store action reverses atomically. Consecutive text edits to one task fold into a single step; the time-driven lifecycle events (graduation, leaf-fall, backlog aging) keep their own undo toasts instead. History is in-memory only and clears on reload. While a text field is focused the shortcut yields to the browser's native caret-level undo.

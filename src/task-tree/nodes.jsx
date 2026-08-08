@@ -22,7 +22,7 @@ export function RootHub({ x, y, isDrop, onAdd, label = "Add a top-level task" })
 
 // Inner node of a fully-done subtree, folded into a bare twig;
 // selecting expands it back to a pill.
-export function DoneTwig({ node, x, y, isDrop, isDragging, faded, handlers }) {
+export function DoneTwig({ node, x, y, isDrop, isCursor, isDragging, faded, handlers }) {
   return (
     <g
       data-node={node.id}
@@ -36,6 +36,7 @@ export function DoneTwig({ node, x, y, isDrop, isDragging, faded, handlers }) {
         <path d="M0,0 C-3,-3 -3,-8 0,-11 C3,-8 3,-3 0,0 Z" transform="translate(10,-9) rotate(40)" className="tt-twig-leaf" />
         <path d="M0,0 C-3,-3 -3,-8 0,-11 C3,-8 3,-3 0,0 Z" transform="translate(14,8) rotate(130)" className="tt-twig-leaf" />
       </g>
+      {isCursor && <circle r={20} className="tt-cursor-ring round" />}
       {isDrop && <circle r={21} className="tt-drop-ring" />}
       <title>{node.title}{node.desc ? "\n" + node.desc : ""}</title>
     </g>
@@ -43,7 +44,7 @@ export function DoneTwig({ node, x, y, isDrop, isDragging, faded, handlers }) {
 }
 
 // Done leaf task, folded into a real leaf; selecting expands it back to a pill.
-export function DoneLeaf({ node, x, y, isDrop, isDragging, faded, handlers }) {
+export function DoneLeaf({ node, x, y, isDrop, isCursor, isDragging, faded, handlers }) {
   return (
     <g
       data-node={node.id}
@@ -57,13 +58,14 @@ export function DoneLeaf({ node, x, y, isDrop, isDragging, faded, handlers }) {
         <path d="M0,10 C-10,2 -10,-10 0,-18 C10,-10 10,2 0,10 Z" className="tt-realleaf-blade" />
         <path d="M0,8 L0,-14 M0,2 Q-4,-1 -6,-5 M0,-2 Q4,-5 6,-9" className="tt-realleaf-vein" />
       </g>
+      {isCursor && <circle r={20} className="tt-cursor-ring round" />}
       {isDrop && <circle r={21} className="tt-drop-ring" />}
       <title>{node.title}{node.desc ? "\n" + node.desc : ""}</title>
     </g>
   );
 }
 
-export function TaskPill({ node, x, y, isSel, isDone, isLeaf, isDrop, isDragging, faded, handlers }) {
+export function TaskPill({ node, x, y, isSel, isCursor, isDone, isLeaf, isDrop, isDragging, faded, handlers }) {
   const w = pillW(node);
   const st = node.status ? statusByKey[node.status] : null;
   const ty = node.type ? typeByKey[node.type] : null;
@@ -94,6 +96,9 @@ export function TaskPill({ node, x, y, isSel, isDone, isLeaf, isDrop, isDragging
       {node.desc && <circle cx={w - 8} cy={8} r={2.6} className="tt-desc-dot" />}
       {isDrop && (
         <rect x={-3} y={-3} width={w + 6} height={PILL_H + 6} rx={13} className="tt-drop-ring" />
+      )}
+      {isCursor && !isSel && (
+        <rect x={-2} y={-2} width={w + 4} height={PILL_H + 4} rx={13} className="tt-cursor-ring" />
       )}
       {isSel && <rect width={w} height={PILL_H} rx={11} className="tt-pill-ring" />}
       <title>{node.title}{node.desc ? "\n" + node.desc : ""}</title>
