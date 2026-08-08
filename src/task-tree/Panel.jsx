@@ -6,6 +6,7 @@ import { STATUSES, TYPES } from "./model.js";
 export default function Panel({
   selected, titleInputRef, confirmDelete, setConfirmDelete,
   onPatch, onAddChild, onImportChild, onDelete, onClose,
+  blockers = [], linking = false, onStartLink, onRemoveDep,
 }) {
   return (
     <aside className={`tt-panel ${selected ? "open" : ""}`}>
@@ -91,6 +92,29 @@ export default function Panel({
                   </button>
                 ))}
               </div>
+            </div>
+            <div className="tt-field">
+              <span>Blocked by</span>
+              {blockers.length > 0 && (
+                <ul className="tt-deps">
+                  {blockers.map((b) => (
+                    <li key={b.id} className="tt-dep-item">
+                      <span className="tt-dep-title">⛓ {b.title || "Untitled"}</span>
+                      <button
+                        className="tt-dep-remove"
+                        onClick={() => onRemoveDep(b.id)}
+                        aria-label="Remove dependency"
+                      >×</button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <button
+                className={`tt-chip ${linking ? "on" : ""}`}
+                onClick={onStartLink}
+              >
+                {linking ? "Click a blocking task… (Esc to cancel)" : "+ Link a blocker"}
+              </button>
             </div>
           </div>
 

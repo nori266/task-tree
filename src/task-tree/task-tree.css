@@ -160,6 +160,38 @@
 .tt-link.active { stroke: #7E9184; stroke-width: 2.8; }
 /* branch feeding a "will do next" task: same emphasis, a touch dimmer + bluer */
 .tt-link.next { stroke: #93A6BC; stroke-width: 2.2; }
+
+/* cross-tree "blocked by" dependency: dashed, muted violet, arrow at the
+   blocked task. Not a structural edge — visually distinct from tree branches */
+.tt-dep {
+  fill: none; stroke: #9C86B0; stroke-width: 1.6;
+  stroke-dasharray: 5 5; opacity: .8;
+}
+.tt-dep-head { fill: #9C86B0; }
+
+/* linking mode: crosshair over the canvas while picking a blocker */
+.tt-svgwrap.linking, .tt-svgwrap.linking:active { cursor: crosshair; }
+.tt-linking-hint {
+  position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px; border-radius: 999px;
+  background: #F3EEF8; border: 1px solid #D6C9E4; color: #5B4A70;
+  font-size: 13px; font-weight: 500; box-shadow: 0 2px 10px rgba(60,40,80,.12);
+  z-index: 6;
+}
+
+/* Panel: list of a task's blockers */
+.tt-deps { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tt-dep-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 8px; border-radius: 8px; background: #F3EEF8; border: 1px solid #E3DAEC;
+}
+.tt-dep-title { font-size: 13px; color: #5B4A70; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-dep-remove {
+  border: none; background: none; cursor: pointer; color: #8A76A0;
+  font-size: 16px; line-height: 1; padding: 0 2px;
+}
+.tt-dep-remove:hover { color: #6B4E8C; }
 .tt-twig { cursor: grab; }
 .tt-twig.dragging { opacity: .3; }
 .tt-twig-wood {

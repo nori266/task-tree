@@ -32,7 +32,7 @@ export function computeDoneBranchIds(children) {
 }
 
 export function computeLayout(doc, size, doneBranchIds) {
-  if (!doc) return { nodes: [], links: [] };
+  if (!doc) return { nodes: [], links: [], deps: [] };
   const rootData = { id: "__root", title: doc.title, children: doc.children };
   const h = d3.hierarchy(rootData, (d) => d.children);
   // Nudge every node off the tidy grid — varying edge lengths so siblings
@@ -75,5 +75,39 @@ export function computeLayout(doc, size, doneBranchIds) {
       path: `M${s.x},${s.y} C${mx},${s.y} ${mx},${t.y} ${t.x},${t.y}`,
     };
   });
-  return { nodes, links };
+  const deps = computeDeps(nodes);
+  return { nodes, links, deps };
+}
+
+// Anchor on the top or bottom edge of the pill (its longest side), so a
+// dependency link leaves and enters orthogonally to that side — vertically.
+function vEdge(node, towardY) {
+  const hh = PILL_H / 2 + 4;
+  const dir = towardY < node.y ? -1 : 1;
+  return { x: node.x, y: node.y + dir * hh };
+}
+
+// Blocked-by links: a gently bowed dashed path from each blocker to the task it
+// blocks. Only drawn when both ends are present in the current layout.
+function computeDeps(nodes) {
+  const byId = new Map(nodes.map((n) => [n.d.data.id, n]));
+  const deps = [];
+  for (const tgt of nodes) {
+    const blockers = tgt.d.data.blockedBy;
+    if (!blockers || !blockers.length) continue;
+    for (const bid of blockers) {
+      const src = byId.get(bid);
+      if (!src) continue;
+      const p1 = vEdge(src, tgt.y);
+      const p2 = vEdge(tgt, src.y);
+      const my = (p1.y + p2.y) / 2;
+      deps.push({
+        id: `${bid}->${tgt.d.data.id}`,
+        from: bid,
+        to: tgt.d.data.id,
+        path: `M${p1.x},${p1.y} C${p1.x},${my} ${p2.x},${my} ${p2.x},${p2.y}`,
+      });
+    }
+  }
+  return deps;
 }

@@ -57,6 +57,7 @@ export function migrateNodes(nodes, now = Date.now()) {
     else if (typeof doneAt !== "number") doneAt = now;
     return {
       ...n, title, status, type, important, createdAt, doneAt,
+      blockedBy: Array.isArray(n.blockedBy) ? n.blockedBy : [],
       children: migrateNodes(n.children || [], now),
     };
   });

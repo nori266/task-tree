@@ -20,7 +20,7 @@ let idCounter = 1;
 const nid = () => `n${Date.now().toString(36)}_${idCounter++}`;
 export const newNode = (title = "New task", status = null, type = null, important = false) => ({
   id: nid(), title, desc: "", status, type, important, createdAt: Date.now(),
-  doneAt: status === "done" ? Date.now() : null, children: [],
+  doneAt: status === "done" ? Date.now() : null, blockedBy: [], children: [],
 });
 
 /* ---------- immutable tree helpers ---------- */
@@ -44,6 +44,38 @@ export function removeNode(nodes, id) {
     .filter((n) => n.id !== id)
     .map((n) => ({ ...n, children: removeNode(n.children, id) }));
 }
+
+/* ---------- cross-tree dependencies (blocked-by links) ---------- */
+
+// `id` gains a dependency on `blockerId` — it is blocked by it. No self-links,
+// no duplicates.
+export const addDep = (nodes, id, blockerId) =>
+  mapTree(nodes, (n) =>
+    n.id === id && id !== blockerId && !(n.blockedBy || []).includes(blockerId)
+      ? { ...n, blockedBy: [...(n.blockedBy || []), blockerId] }
+      : n
+  );
+
+export const removeDep = (nodes, id, blockerId) =>
+  mapTree(nodes, (n) =>
+    n.id === id ? { ...n, blockedBy: (n.blockedBy || []).filter((b) => b !== blockerId) } : n
+  );
+
+export function collectIds(nodes, acc = new Set()) {
+  for (const n of nodes) { acc.add(n.id); collectIds(n.children, acc); }
+  return acc;
+}
+
+// Drop blocked-by references whose target no longer lives in the tree, so a
+// deleted task doesn't leave dangling links behind.
+export const pruneDeps = (nodes) => {
+  const ids = collectIds(nodes);
+  return mapTree(nodes, (n) =>
+    n.blockedBy && n.blockedBy.some((b) => !ids.has(b))
+      ? { ...n, blockedBy: n.blockedBy.filter((b) => ids.has(b)) }
+      : n
+  );
+};
 
 export function findNode(nodes, id) {
   for (const n of nodes) {

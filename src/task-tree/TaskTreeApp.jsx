@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   STATUSES, TYPES, newNode, updateNode, addChild, removeNode, findNode,
-  countNodes, countDone,
+  countNodes, countDone, addDep, removeDep, pruneDeps,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
@@ -42,6 +42,7 @@ export default function TaskTreeApp() {
   const [today, setToday] = useState(() => dayIndex(Date.now())); // local calendar day
   const [sweepTick, setSweepTick] = useState(0); // re-checks ages while the app stays open
   const [selectedId, setSelectedId] = useState(null);
+  const [linkingId, setLinkingId] = useState(null); // dependent node awaiting a blocker pick
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [modal, setModal] = useState(null); // 'import' | 'export' | null
@@ -514,9 +515,20 @@ export default function TaskTreeApp() {
     setView((v) => clampView({ ...v, x: nx, y: ny }));
   };
   const onPointerUp = () => {
-    if (drag.current && !drag.current.moved) setSelectedId(null);
+    if (drag.current && !drag.current.moved) {
+      setSelectedId(null);
+      setLinkingId(null);
+    }
     drag.current = null;
   };
+
+  /* ----- Escape cancels an in-progress dependency link ----- */
+  useEffect(() => {
+    if (!linkingId) return;
+    const onKey = (e) => { if (e.key === "Escape") setLinkingId(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [linkingId]);
 
   /* ----- actions ----- */
   const bumpStructure = () => setStructureRev((r) => r + 1);
@@ -539,11 +551,26 @@ export default function TaskTreeApp() {
 
   const handleDelete = (id) => {
     if (id === focusId) setFocusId(null);
-    setDoc((d) => ({ ...d, children: removeNode(d.children, id) }));
+    if (id === linkingId) setLinkingId(null);
+    setDoc((d) => ({ ...d, children: pruneDeps(removeNode(d.children, id)) }));
     setSelectedId(null);
     setConfirmDelete(false);
     bumpStructure();
   };
+
+  /* ----- blocked-by dependency links ----- */
+  const startLinking = (id) => setLinkingId((cur) => (cur === id ? null : id));
+
+  // While linking, the next node clicked becomes the selected task's blocker.
+  const handleLink = (blockerId) => {
+    const dependent = linkingId;
+    setLinkingId(null);
+    if (!dependent || dependent === blockerId) return;
+    setDoc((d) => ({ ...d, children: addDep(d.children, dependent, blockerId) }));
+  };
+
+  const handleRemoveDep = (id, blockerId) =>
+    setDoc((d) => ({ ...d, children: removeDep(d.children, id, blockerId) }));
 
   /* ----- drag-to-reparent ----- */
 
@@ -785,7 +812,7 @@ export default function TaskTreeApp() {
         {tab === "tree" && (
         <>
         <div
-          className="tt-svgwrap"
+          className={`tt-svgwrap ${linkingId ? "linking" : ""}`}
           ref={svgWrapRef}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
@@ -793,7 +820,26 @@ export default function TaskTreeApp() {
           onPointerCancel={onPointerUp}
         >
           <svg width={size.w} height={size.h}>
+            <defs>
+              <marker
+                id="tt-dep-arrow"
+                viewBox="0 0 10 10"
+                refX="8.5"
+                refY="5"
+                markerWidth="7"
+                markerHeight="7"
+                markerUnits="userSpaceOnUse"
+                orient="auto"
+              >
+                <path d="M0,0 L10,5 L0,10 z" className="tt-dep-head" />
+              </marker>
+            </defs>
             <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+              {layout.deps.map((dp) => (
+                falling?.ids.has(dp.from) || falling?.ids.has(dp.to) ? null : (
+                  <path key={dp.id} d={dp.path} className="tt-dep" markerEnd="url(#tt-dep-arrow)" />
+                )
+              ))}
               {layout.links.map((l) => (
                 falling?.ids.has(l.id) ? null : (
                   <path
@@ -838,6 +884,7 @@ export default function TaskTreeApp() {
                     onClick: () => {
                       if (nodeDrag.current?.suppressClick) { nodeDrag.current = null; return; }
                       nodeDrag.current = null;
+                      if (linkingId) { handleLink(data.id); return; }
                       setSelectedId(data.id);
                       setConfirmDelete(false);
                     },
@@ -879,6 +926,14 @@ export default function TaskTreeApp() {
             </g>
           </svg>
         </div>
+
+        {/* linking-mode hint */}
+        {linkingId && (
+          <div className="tt-linking-hint">
+            <span>⛓ Click the task that blocks “{labelOf(findNode(doc.children, linkingId)?.title || "this task")}”</span>
+            <button className="tt-linkbtn" onClick={() => setLinkingId(null)}>Cancel (Esc)</button>
+          </div>
+        )}
 
         {/* legend */}
         <div className="tt-legend">
@@ -965,6 +1020,10 @@ export default function TaskTreeApp() {
         onImportChild={() => { setImportTarget(selected.id); setImportText(""); setModal("import"); }}
         onDelete={() => handleDelete(selected.id)}
         onClose={() => setSelectedId(null)}
+        blockers={selected ? (selected.blockedBy || []).map((id) => findNode(doc.children, id)).filter(Boolean) : []}
+        linking={selected && selected.id === linkingId}
+        onStartLink={() => selected && startLinking(selected.id)}
+        onRemoveDep={(blockerId) => selected && handleRemoveDep(selected.id, blockerId)}
       />
 
       {/* modals */}
