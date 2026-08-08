@@ -1,0 +1,3 @@
+#!/bin/sh
+# Run the unit tests before every commit; abort the commit if any fail.
+npm test
