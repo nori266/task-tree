@@ -58,7 +58,7 @@ export function computeLayout(doc, size, doneBranchIds) {
   // horizontal tidy tree: width follows the container, but rows are laid
   // out at a fixed vertical pitch so leaves never overlap no matter how
   // many there are — fitView then scales the taller tree to the screen
-  const W = Math.max(560, size.w - 200);
+  const W = Math.max(560, size.w - 200) * 1.4;
   d3.tree()
     .nodeSize([PILL_H + 14, W / Math.max(1, h.height)])
     .separation((a, b) => (a.parent === b.parent ? 1 : 1.35))(h);
