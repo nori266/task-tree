@@ -90,3 +90,6 @@ export const countNodes = (nodes) =>
   nodes.reduce((a, n) => a + 1 + countNodes(n.children), 0);
 export const countDone = (nodes) =>
   nodes.reduce((a, n) => a + (n.status === "done" ? 1 : 0) + countDone(n.children), 0);
+// Leaf tasks (tips with no children) still present in the subtree.
+export const countLeaves = (nodes) =>
+  nodes.reduce((a, n) => a + (n.children.length ? countLeaves(n.children) : 1), 0);

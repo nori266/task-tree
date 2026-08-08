@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   newNode, updateNode, addChild, removeNode, findNode, countNodes, countDone,
-  addDep, removeDep, pruneDeps, collectIds,
+  countLeaves, addDep, removeDep, pruneDeps, collectIds,
 } from "../model.js";
 
 const tree = () => [
@@ -50,6 +50,10 @@ describe("tree helpers", () => {
   it("counts nodes and done nodes across the whole tree", () => {
     expect(countNodes(tree())).toBe(4);
     expect(countDone(tree())).toBe(2);
+  });
+  it("countLeaves counts only childless tips, not intermediate branches", () => {
+    // tree(): a -> {a1, a2}, b. Leaves: a1, a2, b = 3 (a is a branch)
+    expect(countLeaves(tree())).toBe(3);
   });
 });
 
