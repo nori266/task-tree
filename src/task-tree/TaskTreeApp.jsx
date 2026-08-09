@@ -16,7 +16,7 @@ import Backlog from "./Backlog.jsx";
 import ProjectsPanel from "./ProjectsPanel.jsx";
 import {
   INDEX_KEY, ACTIVE_KEY, VOCAB_KEY, docKey, forestKey, backlogKey, litterKey,
-  newProjectId, migrateLegacy,
+  newProjectId, migrateLegacy, getRaw,
 } from "./projects.js";
 import {
   sweepBacklog, mergeIntoBacklog, takeFromBacklog, graftIntoTree, countBacklogged,
@@ -114,10 +114,9 @@ export default function TaskTreeApp() {
      initial load, project switching, delete and undo. */
   const readStores = async (id) => {
     const read = async (key) => {
-      try {
-        const r = await window.storage.get(key);
-        return r?.value ? JSON.parse(r.value) : null;
-      } catch (e) { return null; }
+      const raw = await getRaw(window.storage, key);
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch (e) { return null; }
     };
     let d = await read(docKey(id));
     if (!d || !Array.isArray(d.children)) {
@@ -783,10 +782,7 @@ export default function TaskTreeApp() {
         litter: JSON.stringify(l),
       };
     } else {
-      const rawOf = async (key) => {
-        try { const r = await window.storage.get(key); return r?.value ?? null; }
-        catch (e) { return null; }
-      };
+      const rawOf = (key) => getRaw(window.storage, key);
       raws = {
         doc: await rawOf(docKey(id)),
         forest: await rawOf(forestKey(id)),

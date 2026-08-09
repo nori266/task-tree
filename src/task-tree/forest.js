@@ -1,20 +1,12 @@
 import { countNodes } from "./model.js";
+import { hashInt, rand, jitter } from "./hash.js";
 
 /* Grow a natural-looking tree whose branching mirrors a completed task
    subtree: the achievement's root becomes the trunk, each task a branch that
    splits off into its children, and leaf tasks sprout foliage at the tips.
    Pure geometry — returns branch segments (tapered), leaf blobs and a bbox;
-   Forest.jsx turns those into SVG and fits them to each card. */
-
-// FNV-1a hash → stable pseudo-randomness seeded by node id, so a given
-// achievement always grows into the exact same tree.
-function hashInt(id, salt = 0) {
-  let h = 2166136261 ^ salt;
-  for (let i = 0; i < id.length; i++) h = Math.imul(h ^ id.charCodeAt(i), 16777619);
-  return h >>> 0;
-}
-const rand = (id, salt = 0) => (hashInt(id, salt) % 1000) / 1000; // [0,1)
-const jitter = (id, salt = 0) => rand(id, salt) - 0.5; // [-0.5,0.5)
+   Forest.jsx turns those into SVG and fits them to each card.
+   Seeded by node id, so a given achievement always grows the exact same tree. */
 
 export function growTree(root) {
   const branches = []; // {x1,y1,x2,y2,w1,w2,depth}

@@ -28,7 +28,7 @@ export const backlogKey = (id) => keyFor(id, "backlog");
 export const litterKey = (id) => keyFor(id, "litter");
 
 // window.storage.get throws when a key is absent; treat that as "no value".
-async function getRaw(storage, key) {
+export async function getRaw(storage, key) {
   try {
     const res = await storage.get(key);
     return res?.value ?? null;

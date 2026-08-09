@@ -11,7 +11,7 @@ import { findNode, addChild } from "./model.js";
    again only when it is untouched. Ancestors that are merely path stubs
    disappear again when their last real backlog item returns to the Tree. */
 
-// TEMPORARY: 1 day while testing — the intended threshold is 7 days.
+// How long an untouched leaf sits in the Tree before it ages out to the Backlog.
 export const STALE_MS = 7 * 24 * 60 * 60 * 1000;
 
 const isUntouched = (n) => !n.status;
