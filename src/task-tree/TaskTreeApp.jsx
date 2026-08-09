@@ -12,6 +12,11 @@ import Panel from "./Panel.jsx";
 import { ImportModal, ExportModal } from "./Modals.jsx";
 import Forest from "./Forest.jsx";
 import Backlog from "./Backlog.jsx";
+import ProjectsPanel from "./ProjectsPanel.jsx";
+import {
+  INDEX_KEY, ACTIVE_KEY, docKey, forestKey, backlogKey, litterKey,
+  newProjectId, migrateLegacy,
+} from "./projects.js";
 import {
   sweepBacklog, mergeIntoBacklog, takeFromBacklog, graftIntoTree, countBacklogged,
 } from "./backlog.js";
@@ -61,6 +66,12 @@ export default function TaskTreeApp() {
   const [size, setSize] = useState({ w: 1000, h: 700 });
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [projects, setProjects] = useState([]); // [{id, title}]
+  const [activeId, setActiveId] = useState(null); // active project id
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 640
+  );
+  const [deletedProject, setDeletedProject] = useState(null); // {meta, raws, at, key} undo toast
 
   const containerRef = useRef(null);
   const svgWrapRef = useRef(null);
@@ -80,6 +91,7 @@ export default function TaskTreeApp() {
   const fellTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
   const syncTimer = useRef(null);
+  const deletedTimer = useRef(null);
 
   /* ----- undo/redo -----
      Every undoable action snapshots the four persistent stores (doc, forest,
@@ -95,55 +107,65 @@ export default function TaskTreeApp() {
   const future = useRef([]); // redo stack, newest last
   const editCoalesce = useRef({ id: null, at: 0 });
 
+  /* ----- read one project's four stores from storage -----
+     Pure read + parse/migrate; never touches React state, so it's reused by the
+     initial load, project switching, delete and undo. */
+  const readStores = async (id) => {
+    const read = async (key) => {
+      try {
+        const r = await window.storage.get(key);
+        return r?.value ? JSON.parse(r.value) : null;
+      } catch (e) { return null; }
+    };
+    let d = await read(docKey(id));
+    if (!d || !Array.isArray(d.children)) {
+      d = { title: "My tasks", children: parseMarkdown(SAMPLE_MD) };
+    } else {
+      d = { ...d, children: migrateNodes(d.children) };
+    }
+    const f = await read(forestKey(id));
+    const b = await read(backlogKey(id));
+    const l = await read(litterKey(id));
+    return {
+      doc: d,
+      forest: Array.isArray(f) ? f : [],
+      backlog: Array.isArray(b) ? migrateNodes(b) : [],
+      litter: Array.isArray(l) ? l : [],
+    };
+  };
+
   /* ----- load ----- */
   useEffect(() => {
     (async () => {
-      let d = null;
-      try {
-        const res = await window.storage.get("tasktree:doc");
-        if (res?.value) d = JSON.parse(res.value);
-      } catch (e) { /* first run */ }
-      if (!d || !Array.isArray(d.children)) {
-        d = { title: "My tasks", children: parseMarkdown(SAMPLE_MD) };
-      } else {
-        d = { ...d, children: migrateNodes(d.children) };
-      }
-      setDoc(d);
-      try {
-        const fr = await window.storage.get("tasktree:forest");
-        if (fr?.value) {
-          const parsed = JSON.parse(fr.value);
-          if (Array.isArray(parsed)) setForest(parsed);
-        }
-      } catch (e) { /* no forest yet */ }
-      try {
-        const bl = await window.storage.get("tasktree:backlog");
-        if (bl?.value) {
-          const parsed = JSON.parse(bl.value);
-          if (Array.isArray(parsed)) setBacklog(migrateNodes(parsed));
-        }
-      } catch (e) { /* no backlog yet */ }
-      try {
-        const lt = await window.storage.get("tasktree:litter");
-        if (lt?.value) {
-          const parsed = JSON.parse(lt.value);
-          if (Array.isArray(parsed)) setLitter(parsed);
-        }
-      } catch (e) { /* nothing has fallen yet */ }
+      const { projects: idx, activeId: id } = await migrateLegacy(window.storage);
+      setProjects(idx);
+      setActiveId(id);
+      const stores = await readStores(id);
+      const title = idx.find((p) => p.id === id)?.title;
+      setDoc(title ? { ...stores.doc, title } : stores.doc);
+      setForest(stores.forest);
+      setBacklog(stores.backlog);
+      setLitter(stores.litter);
+      prevBigDone.current = null;
+      prevGraduable.current = null;
+      lastSweepDay.current = null;
       loaded.current = true;
       setStructureRev((r) => r + 1);
       setSweepTick((x) => x + 1); // age check now that the saved doc is in place
       setFallTick((x) => x + 1); // and the day's leaf-fall
     })();
-  }, []);
+  }, []); // eslint-disable-line
 
-  /* ----- save (debounced) ----- */
+  /* ----- save (debounced) -----
+     All four persist to the active project's own keys; changing project carries
+     the new stores and new id in together (batched), so nothing is written to
+     the wrong project's key. */
   useEffect(() => {
-    if (!loaded.current || !doc) return;
+    if (!loaded.current || !doc || !activeId) return;
     setSaveState("saving");
     const t = setTimeout(async () => {
       try {
-        await window.storage.set("tasktree:doc", JSON.stringify(doc));
+        await window.storage.set(docKey(activeId), JSON.stringify(doc));
         setSaveState("saved");
         setTimeout(() => setSaveState("idle"), 1400);
       } catch (e) {
@@ -151,25 +173,25 @@ export default function TaskTreeApp() {
       }
     }, 600);
     return () => clearTimeout(t);
-  }, [doc]);
+  }, [doc, activeId]);
 
   /* ----- persist the forest ----- */
   useEffect(() => {
-    if (!loaded.current) return;
-    window.storage.set("tasktree:forest", JSON.stringify(forest)).catch(() => {});
-  }, [forest]);
+    if (!loaded.current || !activeId) return;
+    window.storage.set(forestKey(activeId), JSON.stringify(forest)).catch(() => {});
+  }, [forest, activeId]);
 
   /* ----- persist the backlog ----- */
   useEffect(() => {
-    if (!loaded.current) return;
-    window.storage.set("tasktree:backlog", JSON.stringify(backlog)).catch(() => {});
-  }, [backlog]);
+    if (!loaded.current || !activeId) return;
+    window.storage.set(backlogKey(activeId), JSON.stringify(backlog)).catch(() => {});
+  }, [backlog, activeId]);
 
   /* ----- persist the litter ----- */
   useEffect(() => {
-    if (!loaded.current) return;
-    window.storage.set("tasktree:litter", JSON.stringify(litter)).catch(() => {});
-  }, [litter]);
+    if (!loaded.current || !activeId) return;
+    window.storage.set(litterKey(activeId), JSON.stringify(litter)).catch(() => {});
+  }, [litter, activeId]);
 
   /* ----- age untouched leaves out of the Tree into the Backlog -----
      A leaf with no status that has sat in the Tree for a week moves to the
@@ -644,6 +666,179 @@ export default function TaskTreeApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, []); // eslint-disable-line
 
+  /* ----- projects ----- */
+
+  // Write the active project's current stores to their keys now, without waiting
+  // for the debounced save — used before leaving a project.
+  const flushActive = () => {
+    if (!activeId) return;
+    const { doc: d, forest: f, backlog: b, litter: l } = liveState.current;
+    if (d) window.storage.set(docKey(activeId), JSON.stringify(d)).catch(() => {});
+    window.storage.set(forestKey(activeId), JSON.stringify(f)).catch(() => {});
+    window.storage.set(backlogKey(activeId), JSON.stringify(b)).catch(() => {});
+    window.storage.set(litterKey(activeId), JSON.stringify(l)).catch(() => {});
+  };
+
+  // Everything scoped to a single tree is reset when a new project takes over:
+  // undo history, the graduation/celebration/leaf-fall bookkeeping, transient
+  // selection, the sync handle, and any pending toasts.
+  const resetForProject = () => {
+    past.current = [];
+    future.current = [];
+    setCanUndo(false);
+    setCanRedo(false);
+    editCoalesce.current = { id: null, at: 0 };
+    prevBigDone.current = null;
+    prevGraduable.current = null;
+    lastSweepDay.current = null;
+    setSelectedId(null);
+    setCursorId(null);
+    setFocusId(null);
+    setLinkingId(null);
+    setDragState(null);
+    setConfirmDelete(false);
+    syncHandle.current = null;
+    setSyncFileName(null);
+    setSyncState("idle");
+    setPlanted(null);
+    setBacklogged(null);
+    setFell(null);
+    setFalling(null);
+    loaded.current = true;
+    bumpStructure();
+    setSweepTick((x) => x + 1);
+    setFallTick((x) => x + 1);
+  };
+
+  const applyStores = (stores, title) => {
+    setDoc(title ? { ...stores.doc, title } : stores.doc);
+    setForest(stores.forest);
+    setBacklog(stores.backlog);
+    setLitter(stores.litter);
+    resetForProject();
+  };
+
+  const switchProject = async (id) => {
+    if (!id || id === activeId) return;
+    flushActive();
+    // read first, then set the id + stores together so a single batched render
+    // never persists the outgoing project's data under the incoming keys
+    const stores = await readStores(id);
+    setActiveId(id);
+    window.storage.set(ACTIVE_KEY, id).catch(() => {});
+    applyStores(stores, projects.find((p) => p.id === id)?.title);
+  };
+
+  const createProject = () => {
+    flushActive();
+    const id = newProjectId();
+    const title = "New project";
+    const next = [...projects, { id, title }];
+    setProjects(next);
+    window.storage.set(INDEX_KEY, JSON.stringify(next)).catch(() => {});
+    setActiveId(id);
+    window.storage.set(ACTIVE_KEY, id).catch(() => {});
+    setDoc({ title, children: [] });
+    setForest([]);
+    setBacklog([]);
+    setLitter([]);
+    resetForProject();
+    return id;
+  };
+
+  const renameProject = (id, title) => {
+    const clean = title.trim() || "Untitled";
+    const next = projects.map((p) => (p.id === id ? { ...p, title: clean } : p));
+    setProjects(next);
+    window.storage.set(INDEX_KEY, JSON.stringify(next)).catch(() => {});
+    if (id === activeId) setDoc((d) => (d ? { ...d, title: clean } : d));
+  };
+
+  const deleteProject = async (id) => {
+    const at = projects.findIndex((p) => p.id === id);
+    if (at < 0) return;
+    const meta = projects[at];
+    // snapshot the project's four stores for undo: from memory when it's the
+    // active one (may hold unsaved edits), from storage otherwise
+    let raws;
+    if (id === activeId) {
+      const { doc: d, forest: f, backlog: b, litter: l } = liveState.current;
+      raws = {
+        doc: d ? JSON.stringify(d) : null,
+        forest: JSON.stringify(f),
+        backlog: JSON.stringify(b),
+        litter: JSON.stringify(l),
+      };
+    } else {
+      const rawOf = async (key) => {
+        try { const r = await window.storage.get(key); return r?.value ?? null; }
+        catch (e) { return null; }
+      };
+      raws = {
+        doc: await rawOf(docKey(id)),
+        forest: await rawOf(forestKey(id)),
+        backlog: await rawOf(backlogKey(id)),
+        litter: await rawOf(litterKey(id)),
+      };
+    }
+    [docKey, forestKey, backlogKey, litterKey].forEach((k) =>
+      window.storage.delete(k(id)).catch(() => {})
+    );
+
+    let remaining = projects.filter((p) => p.id !== id);
+    let nextActive = activeId;
+    if (id === activeId) {
+      if (remaining.length) {
+        nextActive = remaining[Math.max(0, at - 1)].id;
+      } else {
+        // never leave the app with zero projects — seed a fresh empty one
+        const seedId = newProjectId();
+        window.storage
+          .set(docKey(seedId), JSON.stringify({ title: "My tasks", children: [] }))
+          .catch(() => {});
+        remaining = [{ id: seedId, title: "My tasks" }];
+        nextActive = seedId;
+      }
+    }
+    setProjects(remaining);
+    window.storage.set(INDEX_KEY, JSON.stringify(remaining)).catch(() => {});
+
+    if (nextActive !== activeId) {
+      const stores = await readStores(nextActive);
+      setActiveId(nextActive);
+      window.storage.set(ACTIVE_KEY, nextActive).catch(() => {});
+      applyStores(stores, remaining.find((p) => p.id === nextActive)?.title);
+    }
+
+    clearTimeout(deletedTimer.current);
+    setDeletedProject({ meta, raws, at, key: Date.now() });
+    deletedTimer.current = setTimeout(() => setDeletedProject(null), 7000);
+  };
+
+  const undoDeleteProject = async () => {
+    if (!deletedProject) return;
+    const { meta, raws, at } = deletedProject;
+    clearTimeout(deletedTimer.current);
+    setDeletedProject(null);
+    const put = (key, val) => { if (val != null) window.storage.set(key, val).catch(() => {}); };
+    put(docKey(meta.id), raws.doc);
+    put(forestKey(meta.id), raws.forest);
+    put(backlogKey(meta.id), raws.backlog);
+    put(litterKey(meta.id), raws.litter);
+    const next = projects.some((p) => p.id === meta.id)
+      ? projects
+      : (() => { const c = [...projects]; c.splice(Math.min(at, c.length), 0, meta); return c; })();
+    setProjects(next);
+    window.storage.set(INDEX_KEY, JSON.stringify(next)).catch(() => {});
+    flushActive();
+    const stores = await readStores(meta.id);
+    setActiveId(meta.id);
+    window.storage.set(ACTIVE_KEY, meta.id).catch(() => {});
+    applyStores(stores, meta.title);
+  };
+
+  useEffect(() => () => clearTimeout(deletedTimer.current), []);
+
   const handleAddChild = (parentId) => {
     const child = newNode();
     commit();
@@ -1028,6 +1223,18 @@ export default function TaskTreeApp() {
         </div>
       </header>
 
+      {/* main: projects sidebar + canvas */}
+      <div className="tt-main">
+      <ProjectsPanel
+        projects={projects}
+        activeId={activeId}
+        collapsed={sidebarCollapsed}
+        onToggle={() => setSidebarCollapsed((c) => !c)}
+        onSwitch={switchProject}
+        onCreate={createProject}
+        onRename={renameProject}
+        onDelete={deleteProject}
+      />
       {/* canvas */}
       <div className="tt-canvas" ref={containerRef}>
         {tab === "forest" && (
@@ -1242,6 +1449,18 @@ export default function TaskTreeApp() {
             )}
           </div>
         )}
+
+        {/* deleted-project toast, with undo */}
+        {deletedProject && (
+          <div className="tt-toast" key={deletedProject.key}>
+            <span className="tt-toast-icon">🗑️</span>
+            <span className="tt-toast-text">
+              Project “{labelOf(deletedProject.meta.title || "Untitled")}” deleted.
+            </span>
+            <button className="tt-toast-undo" onClick={undoDeleteProject}>Undo</button>
+          </div>
+        )}
+      </div>
       </div>
 
       {/* detail panel */}
