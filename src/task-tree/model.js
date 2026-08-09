@@ -1,20 +1,44 @@
 /* Task Tree data model: status/type vocabularies and immutable tree helpers. */
 
-export const STATUSES = [
+export const DEFAULT_STATUSES = [
   { key: "inprogress", emoji: "💻", label: "In progress", color: "#4F836B" },
   { key: "waiting",    emoji: "⏳", label: "Waiting to start", color: "#A08D5F" },
   { key: "next",       emoji: "⏭️", label: "Will do next", color: "#5B7FA6" },
   { key: "done",       emoji: "✅", label: "Done", color: "#93A697" },
   { key: "question",   emoji: "❓", label: "Needs external input", color: "#8A6FA6" },
 ];
-export const TYPES = [
+export const DEFAULT_TYPES = [
   { key: "call",     emoji: "☎️", label: "Call" },
   { key: "coding",   emoji: "👩🏻‍💻", label: "Coding" },
   { key: "docs",     emoji: "✍🏻", label: "Docs" },
   { key: "research", emoji: "🧐", label: "Research" },
 ];
-export const statusByKey = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
-export const typeByKey = Object.fromEntries(TYPES.map((t) => [t.key, t]));
+
+// Status keys the app's own logic keys off (done drives the whole leaf-fall /
+// graduation lifecycle; inprogress/next tint the links). They may be relabelled
+// and recoloured, but not removed or re-keyed.
+export const PROTECTED_STATUS_KEYS = ["done", "inprogress", "next"];
+
+const clone = (arr) => arr.map((x) => ({ ...x }));
+
+/* The live vocabulary. These are `let` so the customizer can replace them at
+   runtime via setVocab(); every consumer imports the binding (not a snapshot),
+   so a swap is seen everywhere on the next render. */
+export let STATUSES = clone(DEFAULT_STATUSES);
+export let TYPES = clone(DEFAULT_TYPES);
+export let statusByKey = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
+export let typeByKey = Object.fromEntries(TYPES.map((t) => [t.key, t]));
+
+export function setVocab({ types, statuses } = {}) {
+  if (Array.isArray(types)) TYPES = types;
+  if (Array.isArray(statuses)) STATUSES = statuses;
+  statusByKey = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
+  typeByKey = Object.fromEntries(TYPES.map((t) => [t.key, t]));
+}
+
+let vocabKeyCounter = 1;
+export const newTypeKey = () => `t${Date.now().toString(36)}_${vocabKeyCounter++}`;
+export const newStatusKey = () => `s${Date.now().toString(36)}_${vocabKeyCounter++}`;
 
 let idCounter = 1;
 const nid = () => `n${Date.now().toString(36)}_${idCounter++}`;

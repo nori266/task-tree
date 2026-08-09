@@ -8,6 +8,8 @@ import { parseMarkdown, SAMPLE_MD } from "./markdown.js";
 
 export const INDEX_KEY = "tasktree:projects";
 export const ACTIVE_KEY = "tasktree:activeProject";
+// The type/status vocabulary is customized app-wide, shared across projects.
+export const VOCAB_KEY = "tasktree:vocab";
 
 const LEGACY = {
   doc: "tasktree:doc",

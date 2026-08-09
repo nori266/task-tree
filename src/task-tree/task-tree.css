@@ -398,6 +398,13 @@
   letter-spacing: .08em; font-size: 10px;
 }
 .tt-leg-label.sep { margin-top: 8px; }
+.tt-leg-head { display: inline-flex; align-items: center; gap: 6px; }
+.tt-leg-head.sep { margin-top: 8px; }
+.tt-leg-edit {
+  background: none; border: none; padding: 0 3px; cursor: pointer;
+  color: #6E7A72; font-size: 12px; line-height: 1; border-radius: 4px;
+}
+.tt-leg-edit:hover { color: var(--accent); background: #E4E9E2; }
 .tt-status {
   display: flex; align-items: center; gap: 6px;
   border: 1px solid #DDE4DB; border-radius: 9px; padding: 6px 8px;
@@ -438,6 +445,36 @@
 .tt-note code { background: #E7ECE5; border-radius: 4px; padding: 1px 4px; font-size: 11.5px; }
 .tt-modal textarea { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.5; }
 .tt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.tt-modal-spacer { flex: 1; }
+.tt-btn.sm { padding: 4px 10px; font-size: 12px; }
+
+/* type/status customizer */
+.tt-vocab { width: min(540px, 100%); max-height: 84vh; overflow-y: auto; }
+.tt-vocab-sec { display: flex; flex-direction: column; gap: 8px; }
+.tt-vocab-head { display: flex; align-items: center; justify-content: space-between; }
+.tt-vocab-head span {
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .08em; color: #6E7A72;
+}
+.tt-vocab-row { display: flex; align-items: center; gap: 8px; }
+.tt-vocab-row input {
+  padding: 7px 9px; border: 1px solid #DDE4DB; border-radius: 8px;
+  font-size: 13px; background: #FDFEFC; color: var(--ink);
+}
+.tt-vocab-row input:focus { outline: none; border-color: var(--accent); }
+.tt-vocab-emoji { width: 48px; text-align: center; }
+.tt-vocab-label { flex: 1; min-width: 0; }
+.tt-vocab-color {
+  width: 40px; height: 34px; padding: 2px; cursor: pointer;
+  border: 1px solid #DDE4DB; border-radius: 8px; background: #FDFEFC;
+}
+.tt-vocab-del {
+  flex: none; width: 34px; height: 34px; border-radius: 8px;
+  border: 1px solid #DDE4DB; background: #FDFEFC; cursor: pointer;
+  color: var(--muted); font-size: 13px;
+}
+.tt-vocab-del:hover:not(:disabled) { border-color: #DCC9C3; background: #F2E7E3; }
+.tt-vocab-del:disabled { opacity: .5; cursor: default; }
 
 /* graduated-to-forest toast */
 .tt-toast {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  STATUSES, TYPES, newNode, updateNode, addChild, removeNode, findNode,
+  STATUSES, TYPES, setVocab, newNode, updateNode, addChild, removeNode, findNode,
   countNodes, countDone, countLeaves, addDep, removeDep, pruneDeps,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
@@ -10,12 +10,12 @@ import {
 } from "./nodes.jsx";
 import useLayoutTween from "./useLayoutTween.js";
 import Panel from "./Panel.jsx";
-import { ImportModal, ExportModal } from "./Modals.jsx";
+import { ImportModal, ExportModal, VocabModal } from "./Modals.jsx";
 import Forest from "./Forest.jsx";
 import Backlog from "./Backlog.jsx";
 import ProjectsPanel from "./ProjectsPanel.jsx";
 import {
-  INDEX_KEY, ACTIVE_KEY, docKey, forestKey, backlogKey, litterKey,
+  INDEX_KEY, ACTIVE_KEY, VOCAB_KEY, docKey, forestKey, backlogKey, litterKey,
   newProjectId, migrateLegacy,
 } from "./projects.js";
 import {
@@ -55,7 +55,8 @@ export default function TaskTreeApp() {
   const [linkingId, setLinkingId] = useState(null); // dependent node awaiting a blocker pick
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
-  const [modal, setModal] = useState(null); // 'import' | 'export' | null
+  const [modal, setModal] = useState(null); // 'import' | 'export' | 'vocab' | null
+  const [, setVocabRev] = useState(0); // bumped on vocab change to force a re-render
   const [importText, setImportText] = useState("");
   const [importTarget, setImportTarget] = useState(null); // node id to import into, or null for whole tree
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -138,6 +139,11 @@ export default function TaskTreeApp() {
   /* ----- load ----- */
   useEffect(() => {
     (async () => {
+      try {
+        const r = await window.storage.get(VOCAB_KEY);
+        const v = r?.value ? JSON.parse(r.value) : null;
+        if (v && (Array.isArray(v.types) || Array.isArray(v.statuses))) setVocab(v);
+      } catch (e) { /* keep the defaults */ }
       const { projects: idx, activeId: id } = await migrateLegacy(window.storage);
       setProjects(idx);
       setActiveId(id);
@@ -1084,6 +1090,14 @@ export default function TaskTreeApp() {
     bumpStructure();
   };
 
+  /* ----- customize the type/status vocabulary (app-wide, outside undo) ----- */
+  const saveVocab = ({ types, statuses }) => {
+    setVocab({ types, statuses });
+    window.storage.set(VOCAB_KEY, JSON.stringify({ types, statuses })).catch(() => {});
+    setVocabRev((r) => r + 1); // force the tree, panel and legend to re-read
+    setModal(null);
+  };
+
   const exportMd = doc ? toMarkdown(doc.children) : "";
   const copyExport = async () => {
     try {
@@ -1386,13 +1400,29 @@ export default function TaskTreeApp() {
 
         {/* legend */}
         <div className="tt-legend">
-          <span className="tt-leg-label">Type</span>
+          <div className="tt-leg-head">
+            <span className="tt-leg-label">Type</span>
+            <button
+              className="tt-leg-edit"
+              onClick={() => setModal("vocab")}
+              title="Customize types & statuses"
+              aria-label="Customize types"
+            >✎</button>
+          </div>
           {TYPES.map((t) => (
             <span key={t.key} title={t.label}>
               {t.emoji}<i>{t.label}</i>
             </span>
           ))}
-          <span className="tt-leg-label sep">Status</span>
+          <div className="tt-leg-head sep">
+            <span className="tt-leg-label">Status</span>
+            <button
+              className="tt-leg-edit"
+              onClick={() => setModal("vocab")}
+              title="Customize types & statuses"
+              aria-label="Customize statuses"
+            >✎</button>
+          </div>
           {STATUSES.map((s) => (
             <span key={s.key} title={s.label}>
               {s.emoji}<i>{s.label}</i>
@@ -1500,6 +1530,9 @@ export default function TaskTreeApp() {
           onClose={() => { setModal(null); setImportTarget(null); }}
           targetTitle={importTarget ? findNode(doc.children, importTarget)?.title : null}
         />
+      )}
+      {modal === "vocab" && (
+        <VocabModal onSave={saveVocab} onClose={() => setModal(null)} />
       )}
       {modal === "export" && (
         <ExportModal
