@@ -8,6 +8,7 @@ import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./l
 import {
   RootHub, TaskPill, DoneLeaf, DoneTwig, DragGhost, Butterflies, makeFlock, FallingLeaves,
 } from "./nodes.jsx";
+import useLayoutTween from "./useLayoutTween.js";
 import Panel from "./Panel.jsx";
 import { ImportModal, ExportModal } from "./Modals.jsx";
 import Forest from "./Forest.jsx";
@@ -397,6 +398,12 @@ export default function TaskTreeApp() {
     () => computeLayout(viewDoc, size, doneBranchIds),
     [viewDoc, size, doneBranchIds]
   );
+
+  /* Tweened copy of the layout for drawing: nodes glide and their links follow
+     when the tree re-balances (e.g. after a re-parent). All interaction logic
+     below stays on `layout` (final positions), so hit-testing, keyboard nav and
+     fit-view target where things land, not where they are mid-flight. */
+  const render = useLayoutTween(layout);
 
   /* ----- leaf-fall: done leaves let go and drop to the Forest floor -----
      Runs only when the app opens and when you come back on a new day, so
@@ -1274,12 +1281,12 @@ export default function TaskTreeApp() {
               </marker>
             </defs>
             <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
-              {layout.deps.map((dp) => (
+              {render.deps.map((dp) => (
                 falling?.ids.has(dp.from) || falling?.ids.has(dp.to) ? null : (
                   <path key={dp.id} d={dp.path} className="tt-dep" markerEnd="url(#tt-dep-arrow)" />
                 )
               ))}
-              {layout.links.map((l) => (
+              {render.links.map((l) => (
                 falling?.ids.has(l.id) ? null : (
                   <path
                     key={l.id}
@@ -1288,7 +1295,7 @@ export default function TaskTreeApp() {
                   />
                 )
               ))}
-              {layout.nodes.map((n) => {
+              {render.nodes.map((n) => {
                 const data = n.d.data;
                 if (n.d.depth === 0) {
                   return (
@@ -1360,7 +1367,7 @@ export default function TaskTreeApp() {
                 />
               )}
               {celebration && (() => {
-                const n = layout.nodes.find((m) => m.d.depth > 0 && m.d.data.id === celebration.id);
+                const n = render.nodes.find((m) => m.d.depth > 0 && m.d.data.id === celebration.id);
                 return n ? (
                   <Butterflies key={celebration.key} flock={celebration.flock} x={n.x} y={n.y} />
                 ) : null;

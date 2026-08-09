@@ -67,16 +67,22 @@ export function computeLayout(doc, size, doneBranchIds) {
   const pos = new Map(nodes.map((n) => [n.d, n]));
   const links = h.links().map((l) => {
     const s = pos.get(l.source), t = pos.get(l.target);
-    const mx = (s.x + t.x) / 2;
     return {
       id: l.target.data.id,
+      source: l.source.data.id,
       inprogress: l.target.data.status === "inprogress",
       next: l.target.data.status === "next",
-      path: `M${s.x},${s.y} C${mx},${s.y} ${mx},${t.y} ${t.x},${t.y}`,
+      path: linkPath(s, t),
     };
   });
   const deps = computeDeps(nodes);
   return { nodes, links, deps };
+}
+
+// Parent→child edge: a horizontal S-curve between two node centres.
+export function linkPath(s, t) {
+  const mx = (s.x + t.x) / 2;
+  return `M${s.x},${s.y} C${mx},${s.y} ${mx},${t.y} ${t.x},${t.y}`;
 }
 
 // Anchor on the top or bottom edge of the pill (its longest side), so a
@@ -87,8 +93,16 @@ function vEdge(node, towardY) {
   return { x: node.x, y: node.y + dir * hh };
 }
 
-// Blocked-by links: a gently bowed dashed path from each blocker to the task it
-// blocks. Only drawn when both ends are present in the current layout.
+// Blocked-by link: a gently bowed dashed path from blocker to blocked, anchored
+// on each pill's nearest vertical edge.
+export function depPath(src, tgt) {
+  const p1 = vEdge(src, tgt.y);
+  const p2 = vEdge(tgt, src.y);
+  const my = (p1.y + p2.y) / 2;
+  return `M${p1.x},${p1.y} C${p1.x},${my} ${p2.x},${my} ${p2.x},${p2.y}`;
+}
+
+// Blocked-by links: only drawn when both ends are present in the current layout.
 function computeDeps(nodes) {
   const byId = new Map(nodes.map((n) => [n.d.data.id, n]));
   const deps = [];
@@ -98,14 +112,11 @@ function computeDeps(nodes) {
     for (const bid of blockers) {
       const src = byId.get(bid);
       if (!src) continue;
-      const p1 = vEdge(src, tgt.y);
-      const p2 = vEdge(tgt, src.y);
-      const my = (p1.y + p2.y) / 2;
       deps.push({
         id: `${bid}->${tgt.d.data.id}`,
         from: bid,
         to: tgt.d.data.id,
-        path: `M${p1.x},${p1.y} C${p1.x},${my} ${p2.x},${my} ${p2.x},${p2.y}`,
+        path: depPath(src, tgt),
       });
     }
   }
