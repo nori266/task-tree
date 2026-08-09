@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   newNode, updateNode, addChild, removeNode, findNode, countNodes, countDone,
-  countLeaves, addDep, removeDep, pruneDeps, collectIds,
+  countLeaves, addDep, removeDep, pruneDeps, collectIds, predictType,
 } from "../model.js";
 
 const tree = () => [
@@ -54,6 +54,32 @@ describe("tree helpers", () => {
   it("countLeaves counts only childless tips, not intermediate branches", () => {
     // tree(): a -> {a1, a2}, b. Leaves: a1, a2, b = 3 (a is a branch)
     expect(countLeaves(tree())).toBe(3);
+  });
+});
+
+describe("predictType", () => {
+  it("matches prefix keywords", () => {
+    expect(predictType("Implement the parser")).toBe("coding");
+    expect(predictType("Fix the crash")).toBe("coding");
+    expect(predictType("Call the vendor")).toBe("call");
+    expect(predictType("Discuss the roadmap")).toBe("call");
+    expect(predictType("Talk to the vendor")).toBe("call");
+    expect(predictType("Find out who owns the DNS")).toBe("research");
+  });
+  it("matches 'has' keywords anywhere", () => {
+    expect(predictType("Update the docs")).toBe("docs");
+    expect(predictType("Polish README wording")).toBe("docs");
+  });
+  it("is case-insensitive and ignores leading whitespace", () => {
+    expect(predictType("  FIX login")).toBe("coding");
+  });
+  it("only anchors 'starts' rules at the front", () => {
+    expect(predictType("Recall the meeting agenda")).toBeNull();
+  });
+  it("returns null for no match or empty title", () => {
+    expect(predictType("Buy milk")).toBeNull();
+    expect(predictType("")).toBeNull();
+    expect(predictType(null)).toBeNull();
   });
 });
 

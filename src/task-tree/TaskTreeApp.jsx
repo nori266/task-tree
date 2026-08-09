@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   STATUSES, TYPES, setVocab, newNode, updateNode, addChild, removeNode, findNode,
-  countNodes, countDone, countLeaves, addDep, removeDep, pruneDeps,
+  countNodes, countDone, countLeaves, addDep, removeDep, pruneDeps, predictType,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
@@ -70,9 +70,7 @@ export default function TaskTreeApp() {
   const [canRedo, setCanRedo] = useState(false);
   const [projects, setProjects] = useState([]); // [{id, title}]
   const [activeId, setActiveId] = useState(null); // active project id
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(
-    () => typeof window !== "undefined" && window.innerWidth < 640
-  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [deletedProject, setDeletedProject] = useState(null); // {meta, raws, at, key} undo toast
 
   const containerRef = useRef(null);
@@ -1503,9 +1501,16 @@ export default function TaskTreeApp() {
         confirmDelete={confirmDelete}
         setConfirmDelete={setConfirmDelete}
         onPatch={(patch) => {
-          const textOnly = Object.keys(patch).every((k) => k === "title" || k === "desc");
+          let p = patch;
+          // Fill in a type from the title's keywords, but only when none is set
+          // yet — never override a type the user (or a prior guess) already chose.
+          if ("title" in patch && !selected.type && !("type" in patch)) {
+            const predicted = predictType(patch.title);
+            if (predicted) p = { ...patch, type: predicted };
+          }
+          const textOnly = Object.keys(p).every((k) => k === "title" || k === "desc");
           if (textOnly) commitTextEdit(); else commit();
-          setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, stampDone(patch)) }));
+          setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, stampDone(p)) }));
         }}
         onAddChild={() => handleAddChild(selected.id)}
         onImportChild={() => { setImportTarget(selected.id); setImportText(""); setModal("import"); }}

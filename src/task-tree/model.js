@@ -14,6 +14,16 @@ export const DEFAULT_TYPES = [
   { key: "research", emoji: "🧐", label: "Research" },
 ];
 
+// Keyword rules for guessing a task's type from its title. `starts` matches a
+// prefix (so "recall" won't be a call); `has` matches anywhere. Keyed by type
+// key; custom types simply have no rule and are never predicted.
+export const TYPE_KEYWORDS = {
+  call:     { starts: ["call", "discuss", "talk to", "book a call"], has: [] },
+  coding:   { starts: ["implement", "fix", "build", "refactor", "debug", "add "], has: [] },
+  docs:     { starts: ["write", "document"], has: ["docs", "readme"] },
+  research: { starts: ["find out", "research", "investigate", "look into", "figure out", "explore"], has: [] },
+};
+
 // Status keys the app's own logic keys off (done drives the whole leaf-fall /
 // graduation lifecycle; inprogress/next tint the links). They may be relabelled
 // and recoloured, but not removed or re-keyed.
@@ -34,6 +44,21 @@ export function setVocab({ types, statuses } = {}) {
   if (Array.isArray(statuses)) STATUSES = statuses;
   statusByKey = Object.fromEntries(STATUSES.map((s) => [s.key, s]));
   typeByKey = Object.fromEntries(TYPES.map((t) => [t.key, t]));
+}
+
+// Guess a type key from a title using TYPE_KEYWORDS, or null if nothing
+// matches. Iterates live TYPES so only existing keys are returned and their
+// order sets priority when several rules could match.
+export function predictType(title) {
+  const t = (title || "").trim().toLowerCase();
+  if (!t) return null;
+  for (const type of TYPES) {
+    const rule = TYPE_KEYWORDS[type.key];
+    if (!rule) continue;
+    if ((rule.starts || []).some((k) => t.startsWith(k))) return type.key;
+    if ((rule.has || []).some((k) => t.includes(k))) return type.key;
+  }
+  return null;
 }
 
 let vocabKeyCounter = 1;
