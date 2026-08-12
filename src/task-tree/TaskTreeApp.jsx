@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   STATUSES, TYPES, setVocab, newNode, updateNode, addChild, removeNode, findNode,
-  countNodes, countDone, countLeaves, addDep, removeDep, pruneDeps, predictType,
+  countNodes, countDone, addDep, removeDep, pruneDeps, predictType,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
@@ -290,9 +290,9 @@ export default function TaskTreeApp() {
     const allDone = (n) => n.status === "done" && n.children.every(allDone);
     const big = [];
     const walk = (n) => {
-      const leaves = countLeaves(n.children);
-      if (n.children.length && leaves >= BUTTERFLY_MIN_SUBNODES
-          && leaves < CELEBRATE_MIN_SUBNODES && allDone(n)) big.push(n);
+      const size = countNodes(n.children);
+      if (n.children.length && size >= BUTTERFLY_MIN_SUBNODES
+          && size < CELEBRATE_MIN_SUBNODES && allDone(n)) big.push(n);
       n.children.forEach(walk);
     };
     doc.children.forEach(walk);
@@ -318,8 +318,8 @@ export default function TaskTreeApp() {
      qualify in the same tick the outermost one wins, so one achievement isn't
      shredded into several trees; in ordinary use a nested branch finishes
      earlier than the parent containing it and graduates on its own.
-     The bar is the leaves still on the branch: leaves already shed to litter
-     don't count toward it.
+     The bar is every task still on the branch — leaf or sub-branch: tasks
+     already shed to litter don't count toward it.
      A brief toast lets an accidental completion be undone. */
   useEffect(() => {
     if (!doc) return;
@@ -327,7 +327,7 @@ export default function TaskTreeApp() {
     const eligible = [];
     const walk = (nodes) => {
       for (const n of nodes) {
-        if (n.children.length && countLeaves(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)) eligible.push(n);
+        if (n.children.length && countNodes(n.children) >= CELEBRATE_MIN_SUBNODES && allDone(n)) eligible.push(n);
         else walk(n.children); // don't look inside a branch that is graduating
       }
     };
