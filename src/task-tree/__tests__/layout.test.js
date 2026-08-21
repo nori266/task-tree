@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  jitter, labelOf, pillW, computeDoneBranchIds, computeLayout,
+  jitter, labelOf, pillW, computeDoneBranchIds, computeLayout, PILL_H,
 } from "../layout.js";
 
 describe("jitter", () => {
@@ -78,5 +78,34 @@ describe("computeLayout dependencies", () => {
 
   it("returns empty collections for a null doc", () => {
     expect(computeLayout(null, size, new Set())).toEqual({ nodes: [], links: [], deps: [] });
+  });
+});
+
+describe("computeLayout lane compaction", () => {
+  const size = { w: 1400, h: 800 };
+  const leaf = (id) => ({ id, title: id, blockedBy: [], children: [] });
+  const chain = (id, n) =>
+    n === 0 ? [] : [{ id: `${id}${n}`, title: id, blockedBy: [], children: chain(id, n - 1) }];
+
+  it("never overlaps two nodes that share a depth column", () => {
+    // shallow-bushy and deep-thin branches interleaved: the packer may pull the
+    // deep tail up into free lanes, but pills in the same column must stay clear.
+    const doc = { title: "root", children: [
+      { id: "B1", title: "B1", blockedBy: [], children: [leaf("a"), leaf("b"), leaf("c")] },
+      { id: "D1", title: "D1", blockedBy: [], children: chain("d", 5) },
+      { id: "B2", title: "B2", blockedBy: [], children: [leaf("e"), leaf("f"), leaf("g")] },
+    ] };
+    const { nodes } = computeLayout(doc, size, new Set());
+    const byCol = new Map();
+    for (const n of nodes) {
+      const col = n.d.depth;
+      (byCol.get(col) ?? byCol.set(col, []).get(col)).push(n.y);
+    }
+    for (const ys of byCol.values()) {
+      ys.sort((p, q) => p - q);
+      for (let i = 1; i < ys.length; i++) {
+        expect(ys[i] - ys[i - 1]).toBeGreaterThanOrEqual(PILL_H - 1e-6);
+      }
+    }
   });
 });

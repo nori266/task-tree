@@ -60,8 +60,9 @@ export function computeLayout(doc, size, doneBranchIds) {
     .nodeSize([PILL_H + 14, W / Math.max(1, h.height)])
     .separation((a, b) => (a.parent === b.parent ? 1 : 1.35))(h);
   const nodes = h.descendants().map((d) => ({ d, x: d.y, y: d.x }));
-  naturalize(nodes);
   const pos = new Map(nodes.map((n) => [n.d, n]));
+  compactLanes(pos, h);
+  naturalize(nodes);
   const links = h.links().map((l) => {
     const s = pos.get(l.source), t = pos.get(l.target);
     return {
@@ -74,6 +75,62 @@ export function computeLayout(doc, size, doneBranchIds) {
   });
   const deps = computeDeps(nodes);
   return { nodes, links, deps };
+}
+
+// Vertical skyline packing over the tidy tree's fixed columns. d3.tree spaces
+// siblings by whole-subtree breadth, so a deep-but-thin branch reserves a full
+// lane across every column even where it stands alone. This drops each sibling
+// subtree only as far as its actual per-column (per-depth) occupancy collides
+// with the branches already placed above it — so where a shorter branch has
+// ended, a deeper neighbour's lane rises into that free space. Columns (x) are
+// untouched; only lanes (y) tighten, then each parent re-centres over its kids.
+function compactLanes(pos, root) {
+  const PITCH = PILL_H + 14; // min lane gap between two pills sharing a column
+  // For a subtree, the top (min y) and bottom (max y) at each depth column.
+  const occ = (d) => {
+    const m = new Map();
+    const walk = (x) => {
+      const y = pos.get(x).y;
+      const e = m.get(x.depth);
+      if (e) { e.top = Math.min(e.top, y); e.bottom = Math.max(e.bottom, y); }
+      else m.set(x.depth, { top: y, bottom: y });
+      x.children?.forEach(walk);
+    };
+    walk(d);
+    return m;
+  };
+  const shift = (d, dy) => {
+    const walk = (x) => { pos.get(x).y += dy; x.children?.forEach(walk); };
+    walk(d);
+  };
+  const pack = (d) => {
+    const kids = d.children;
+    if (!kids?.length) return;
+    kids.forEach(pack); // pack descendants first, then this sibling group
+    const skyline = new Map(); // depth → lowest occupied y among placed kids
+    kids.forEach((k, i) => {
+      const o = occ(k);
+      if (i > 0) {
+        // drop k the least amount that clears every column it shares with a
+        // branch above; columns nobody above occupies impose no constraint,
+        // letting k slide up into the gap. A sibling's root column is always
+        // shared, which keeps sibling order and root spacing intact.
+        let need = -Infinity;
+        for (const [depth, seg] of o) {
+          const floor = skyline.get(depth);
+          if (floor !== undefined) need = Math.max(need, floor + PITCH - seg.top);
+        }
+        if (need > -Infinity && need !== 0) shift(k, need);
+      }
+      for (const [depth, seg] of occ(k)) {
+        const floor = skyline.get(depth);
+        skyline.set(depth, floor === undefined ? seg.bottom : Math.max(floor, seg.bottom));
+      }
+    });
+    const first = pos.get(kids[0]).y, last = pos.get(kids[kids.length - 1]).y;
+    pos.get(d).y = (first + last) / 2;
+  };
+  pack(root);
 }
 
 // Parent→child edge: a horizontal S-curve between two node centres.
