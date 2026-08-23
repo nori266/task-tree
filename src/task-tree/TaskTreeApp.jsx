@@ -64,6 +64,7 @@ export default function TaskTreeApp() {
   const [copied, setCopied] = useState(false);
   const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | error
   const [syncFileName, setSyncFileName] = useState(null);
+  const [syncedToast, setSyncedToast] = useState(null); // {name, key} — shown on Cmd+S sync
   const [structureRev, setStructureRev] = useState(0);
   const [size, setSize] = useState({ w: 1000, h: 700 });
   const [canUndo, setCanUndo] = useState(false);
@@ -90,7 +91,9 @@ export default function TaskTreeApp() {
   const fallTimer = useRef(null);
   const fellTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
+  const syncExportRef = useRef(null); // latest syncExport, so the once-bound Cmd+S handler writes fresh content
   const syncTimer = useRef(null);
+  const syncedToastTimer = useRef(null);
   const deletedTimer = useRef(null);
 
   /* ----- undo/redo -----
@@ -670,6 +673,9 @@ export default function TaskTreeApp() {
       } else if (k === "y") {
         e.preventDefault();
         redo();
+      } else if (k === "s") {
+        e.preventDefault(); // stop the browser's "save page" dialog
+        syncExportRef.current?.({ toast: true });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -845,6 +851,7 @@ export default function TaskTreeApp() {
   };
 
   useEffect(() => () => clearTimeout(deletedTimer.current), []);
+  useEffect(() => () => clearTimeout(syncedToastTimer.current), []);
 
   const handleAddChild = (parentId) => {
     const child = newNode();
@@ -1101,24 +1108,33 @@ export default function TaskTreeApp() {
     } catch (e) { /* textarea remains selectable */ }
   };
 
-  const flashSynced = () => {
+  // On a successful write, flash the top-bar indicator; when `toast` is set
+  // (a keyboard-driven Cmd+S, which has no button to flash near) also raise a
+  // dismissable toast naming the file the tree was written to.
+  const flashSynced = (name, toast) => {
     setSyncState("synced");
     if (syncTimer.current) clearTimeout(syncTimer.current);
     syncTimer.current = setTimeout(() => setSyncState("idle"), 1500);
+    if (toast) {
+      setSyncedToast({ name, key: Date.now() });
+      if (syncedToastTimer.current) clearTimeout(syncedToastTimer.current);
+      syncedToastTimer.current = setTimeout(() => setSyncedToast(null), 2500);
+    }
   };
 
   // Let the user set (or change) the file the tree syncs to, then write to it.
-  const pickSyncFile = async () => {
+  const pickSyncFile = async (opts) => {
     if (!window.showSaveFilePicker) {
       // Browser without the File System Access API — fall back to a plain download.
+      const name = `${(doc?.title || "tasks").replace(/[^\w.-]+/g, "-")}.md`;
       const blob = new Blob([exportMd], { type: "text/markdown" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(doc?.title || "tasks").replace(/[^\w.-]+/g, "-")}.md`;
+      a.download = name;
       a.click();
       URL.revokeObjectURL(url);
-      flashSynced();
+      flashSynced(name, opts?.toast);
       return;
     }
     try {
@@ -1128,32 +1144,33 @@ export default function TaskTreeApp() {
       });
       syncHandle.current = handle;
       setSyncFileName(handle.name);
-      await writeSyncFile(handle);
+      await writeSyncFile(handle, opts);
     } catch (e) {
       if (e?.name !== "AbortError") setSyncState("error");
     }
   };
 
-  const writeSyncFile = async (handle) => {
+  const writeSyncFile = async (handle, opts) => {
     setSyncState("syncing");
     try {
       const writable = await handle.createWritable();
       await writable.write(exportMd);
       await writable.close();
-      flashSynced();
+      flashSynced(handle.name, opts?.toast);
     } catch (e) {
       setSyncState("error");
     }
   };
 
   // Sync button: write to the already-chosen file, or prompt for one on first use.
-  const syncExport = async () => {
+  const syncExport = async (opts) => {
     if (syncHandle.current) {
-      await writeSyncFile(syncHandle.current);
+      await writeSyncFile(syncHandle.current, opts);
     } else {
-      await pickSyncFile();
+      await pickSyncFile(opts);
     }
   };
+  syncExportRef.current = syncExport;
 
   const selected = doc && selectedId ? findNode(doc.children, selectedId) : null;
   const total = doc ? countNodes(doc.children) : 0;
@@ -1478,6 +1495,16 @@ export default function TaskTreeApp() {
             {tab !== "backlog" && (
               <button className="tt-toast-go" onClick={() => setTab("backlog")}>View</button>
             )}
+          </div>
+        )}
+
+        {/* synced-to-file toast, raised on Cmd+S */}
+        {syncedToast && !planted && !fell && !backlogged && (
+          <div className="tt-toast" key={syncedToast.key}>
+            <span className="tt-toast-icon">✓</span>
+            <span className="tt-toast-text">
+              {syncedToast.name ? <>Synced to “{syncedToast.name}”.</> : <>Synced.</>}
+            </span>
           </div>
         )}
 
