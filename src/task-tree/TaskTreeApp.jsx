@@ -13,6 +13,7 @@ import Panel from "./Panel.jsx";
 import { ImportModal, ExportModal, VocabModal } from "./Modals.jsx";
 import Forest from "./Forest.jsx";
 import Backlog from "./Backlog.jsx";
+import Linearize from "./Linearize.jsx";
 import ProjectsPanel from "./ProjectsPanel.jsx";
 import {
   INDEX_KEY, ACTIVE_KEY, VOCAB_KEY, docKey, forestKey, backlogKey, litterKey,
@@ -56,6 +57,7 @@ export default function TaskTreeApp() {
   const [searchIdx, setSearchIdx] = useState(0); // index of the current match
   const [linkingId, setLinkingId] = useState(null); // dependent node awaiting a blocker pick
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
+  const [linearized, setLinearized] = useState(false); // Tree tab: show the flattened work stack instead of the tree
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
   const [modal, setModal] = useState(null); // 'import' | 'export' | 'vocab' | null
   const [, setVocabRev] = useState(0); // bumped on vocab change to force a re-render
@@ -936,7 +938,7 @@ export default function TaskTreeApp() {
      inert while a text field is focused and while a dependency link is being
      drawn, and modifier chords (undo/redo) are left to their own handler. */
   useEffect(() => {
-    if (tab !== "tree") return;
+    if (tab !== "tree" || linearized) return;
     const byId = new Map(
       layout.nodes.filter((n) => n.d.depth > 0).map((n) => [n.d.data.id, n.d])
     );
@@ -1011,7 +1013,7 @@ export default function TaskTreeApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [tab, cursorId, selectedId, focusId, linkingId, layout, doneBranchIds]); // eslint-disable-line
+  }, [tab, linearized, cursorId, selectedId, focusId, linkingId, layout, doneBranchIds]); // eslint-disable-line
 
   /* ----- keep the cursor on screen: pan just enough when it lands outside ----- */
   useEffect(() => {
@@ -1337,6 +1339,11 @@ export default function TaskTreeApp() {
                 disabled={!canRedo}
                 title="Redo (⇧⌘Z)"
               >↷ Redo</button>
+              <button
+                className={`tt-btn ghost ${linearized ? "on" : ""}`}
+                onClick={() => setLinearized((v) => !v)}
+                title="Flatten the active tasks into an ordered work stack"
+              >☰ Linearize</button>
               <button className="tt-btn ghost" onClick={fitView} title="Fit tree to screen">Fit</button>
               <button className="tt-btn ghost" onClick={() => { setModal("export"); setCopied(false); setSyncState("idle"); }}>Export</button>
               <button className="tt-btn solid" onClick={() => { setImportTarget(null); setImportText(""); setModal("import"); }}>Import .md</button>
@@ -1370,7 +1377,19 @@ export default function TaskTreeApp() {
             onDelete={deleteFromBacklog}
           />
         )}
-        {tab === "tree" && (
+        {tab === "tree" && linearized && (
+          <Linearize
+            nodes={doc?.children ?? []}
+            onPick={(id) => {
+              setLinearized(false);
+              setSelectedId(id);
+              setCursorId(id);
+              setConfirmDelete(false);
+              centerOn(id);
+            }}
+          />
+        )}
+        {tab === "tree" && !linearized && (
         <>
         <div
           className={`tt-svgwrap ${linkingId ? "linking" : ""}`}

@@ -24,6 +24,14 @@ The core loop it supports: dive into a branch, break a task into sub-tasks as co
 
 **Blocked-by links.** Any task can be marked as blocked by any other, drawn as a dashed, arrowed curve that leaves and enters pills on their nearest vertical edge. Start a link from the panel, then click the blocking task (an ⛓ hint banner guides the pick). A link is removed automatically when either of its two tasks is marked done, since a link to or from finished work no longer blocks anything.
 
+**Linearize (work stack).** A **☰ Linearize** button (left of **Fit** in the Tree toolbar) flattens the live, actionable part of the tree into a single ordered stack — the answer to "what do I actually do next?" without the spatial layout. The stack holds every task whose status is 💻 in progress, ⏭️ will do next, or ⏳ waiting to start, together with all of their descendants (finished ✅ nodes dropped), read top to bottom. The order is a linear extension of two hard rules and one preference:
+
+- **A child sits above its parent** — you finish the pieces before the branch that contains them.
+- **A blocker sits above the task it blocks** (from the blocked-by links above).
+- Otherwise the 💻 in-progress group floats to the top, then ⏭️ will do next, then ⏳ waiting to start; remaining ties fall back to tree order.
+
+The grouping is only the tie-break, so the two hard rules win when they conflict with it: a ⏳ waiting task that blocks a 💻 in-progress one is still pulled above it. A task reached as the descendant of a higher-priority group isn't listed again lower down. Picking any card returns to the Tree with that task selected and centered. Ordering lives in `linearize.js` (a priority topological sort — Kahn's algorithm draining the best-priority ready node first; a blocker cycle can't drop nodes, leftovers are appended), the view in `Linearize.jsx`.
+
 **Three ways a task leaves the Tree.** The Tree only holds live work; everything finished or abandoned exits by one of three routes, so it never silts up.
 
 - **Forest (graduation).** Any fully-done branch with ≥10 subnodes — at *any* depth, not just top level — is lifted out of the Tree and planted in the Forest tab as a tree grown from its own shape. When nested branches qualify in the same tick the outermost wins, so one achievement isn't shredded into several. In ordinary use a nested milestone finishes before the project containing it and graduates on its own, so a long project shows up as a cluster of milestone trees rather than one grand one. Leaves the branch already shed count toward the ≥10, so slow work can't erode below the bar for its own tree.

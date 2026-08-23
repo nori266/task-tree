@@ -89,6 +89,7 @@
 .tt-btn:active { transform: scale(.97); }
 .tt-btn.ghost { background: transparent; border-color: #D6DED4; color: var(--ink); }
 .tt-btn.ghost:hover { background: #E4E9E2; }
+.tt-btn.ghost.on { background: #E4EFE6; border-color: #B7CFBC; color: var(--accent); }
 .tt-btn.solid { background: var(--accent); color: #FBFDFA; }
 .tt-btn.solid:hover { background: #45755F; }
 .tt-btn.solid:disabled, .tt-btn.ghost:disabled { opacity: .45; cursor: default; }
@@ -617,6 +618,26 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(var(--spin)); }
 }
+
+/* Linearize view: the active tasks flattened into one vertical work stack */
+.tt-lin { position: absolute; inset: 0; overflow-y: auto; padding: 28px 0 40px; }
+.tt-lin-stack {
+  display: flex; flex-direction: column; gap: 7px;
+  width: min(560px, 90%); margin: 0 auto;
+}
+.tt-lin-card {
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  padding: 11px 14px; border-radius: 11px;
+  border: 1px solid var(--pill-border); border-left: 4px solid var(--line);
+  background: var(--pill); color: var(--ink); font: inherit; cursor: pointer;
+  transition: background .16s ease, border-color .16s ease, transform .1s ease;
+}
+.tt-lin-card:hover { background: #F1F5EF; border-color: #C4D2C6; }
+.tt-lin-card:active { transform: scale(.995); }
+.tt-lin-card.imp { font-weight: 700; }
+.tt-lin-emoji { font-size: 15px; line-height: 1; flex: none; }
+.tt-lin-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-lin-status { font-size: 14px; line-height: 1; flex: none; opacity: .9; }
 
 @media (prefers-reduced-motion: reduce) {
   .tt-root * { transition-duration: 0s !important; animation-duration: 0s !important; }
