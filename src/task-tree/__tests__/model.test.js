@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   newNode, updateNode, addChild, removeNode, findNode, countNodes, countDone,
-  countLeaves, addDep, removeDep, pruneDeps, collectIds, predictType,
+  countLeaves, addDep, removeDep, dropDepsFor, pruneDeps, collectIds, predictType,
 } from "../model.js";
 
 const tree = () => [
@@ -110,5 +110,20 @@ describe("dependencies", () => {
   it("pruneDeps keeps references that still resolve", () => {
     const withDep = addDep(tree(), "a1", "a2");
     expect(findNode(pruneDeps(withDep), "a1").blockedBy).toEqual(["a2"]);
+  });
+  it("dropDepsFor clears links where the node is blocked", () => {
+    const withDep = addDep(tree(), "a1", "b");
+    const out = dropDepsFor(withDep, "a1");
+    expect(findNode(out, "a1").blockedBy).toEqual([]);
+  });
+  it("dropDepsFor clears links where the node is the blocker", () => {
+    const withDep = addDep(tree(), "a1", "b");
+    const out = dropDepsFor(withDep, "b");
+    expect(findNode(out, "a1").blockedBy).toEqual([]);
+  });
+  it("dropDepsFor leaves unrelated links intact", () => {
+    const withDeps = addDep(addDep(tree(), "a1", "b"), "a1", "a2");
+    const out = dropDepsFor(withDeps, "a2");
+    expect(findNode(out, "a1").blockedBy).toEqual(["b"]);
   });
 });

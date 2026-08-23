@@ -110,6 +110,18 @@ export const removeDep = (nodes, id, blockerId) =>
     n.id === id ? { ...n, blockedBy: (n.blockedBy || []).filter((b) => b !== blockerId) } : n
   );
 
+// Remove every blocked-by link touching `id`, in either direction: links where
+// `id` is the blocked node and links where it is the blocker. Used when a task
+// is done, since a link to or from a finished task no longer blocks anything.
+export const dropDepsFor = (nodes, id) =>
+  mapTree(nodes, (n) =>
+    n.id === id
+      ? { ...n, blockedBy: [] }
+      : n.blockedBy && n.blockedBy.includes(id)
+        ? { ...n, blockedBy: n.blockedBy.filter((b) => b !== id) }
+        : n
+  );
+
 export function collectIds(nodes, acc = new Set()) {
   for (const n of nodes) { acc.add(n.id); collectIds(n.children, acc); }
   return acc;

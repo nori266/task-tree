@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   STATUSES, TYPES, setVocab, newNode, updateNode, addChild, removeNode, findNode,
-  countNodes, countDone, addDep, removeDep, pruneDeps, predictType,
+  countNodes, countDone, addDep, removeDep, dropDepsFor, pruneDeps, predictType,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
@@ -1510,7 +1510,11 @@ export default function TaskTreeApp() {
           }
           const textOnly = Object.keys(p).every((k) => k === "title" || k === "desc");
           if (textOnly) commitTextEdit(); else commit();
-          setDoc((d) => ({ ...d, children: updateNode(d.children, selectedId, stampDone(p)) }));
+          setDoc((d) => {
+            let children = updateNode(d.children, selectedId, stampDone(p));
+            if (p.status === "done") children = dropDepsFor(children, selectedId);
+            return { ...d, children };
+          });
         }}
         onAddChild={() => handleAddChild(selected.id)}
         onImportChild={() => { setImportTarget(selected.id); setImportText(""); setModal("import"); }}
