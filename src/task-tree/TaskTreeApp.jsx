@@ -4,7 +4,7 @@ import {
   countNodes, countDone, addDep, removeDep, dropDepsFor, pruneDeps, predictType,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
-import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout } from "./layout.js";
+import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout, ZOOM_SPEED, ZOOM_MIN, ZOOM_MAX } from "./layout.js";
 import {
   RootHub, TaskPill, DoneLeaf, DoneTwig, DragGhost, Butterflies, makeFlock, FallingLeaves,
 } from "./nodes.jsx";
@@ -543,8 +543,8 @@ export default function TaskTreeApp() {
     const onWheel = (e) => {
       e.preventDefault();
       setView((v) => {
-        const factor = Math.exp(-e.deltaY * 0.0016);
-        const k = Math.min(3, Math.max(0.12, v.k * factor));
+        const factor = Math.exp(-e.deltaY * ZOOM_SPEED);
+        const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
         const rect = el.getBoundingClientRect();
         const px = e.clientX - rect.left, py = e.clientY - rect.top;
         return clampView({ k, x: px - ((px - v.x) / v.k) * k, y: py - ((py - v.y) / v.k) * k });

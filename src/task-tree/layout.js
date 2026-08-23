@@ -5,6 +5,11 @@ import { jitter } from "./hash.js";
    placement (horizontal) with organic jitter applied on top. */
 
 export const PILL_H = 34;
+
+// Wheel-zoom sensitivity: k multiplies by exp(-deltaY * ZOOM_SPEED) per scroll.
+export const ZOOM_SPEED = 0.003;
+export const ZOOM_MIN = 0.12;
+export const ZOOM_MAX = 3;
 export const labelOf = (t) => (t.length > 26 ? t.slice(0, 25) + "…" : t);
 export const pillW = (n) =>
   Math.max(64, 26 + labelOf(n.title).length * (n.important ? 7.6 : 7.0) + (n.type ? 24 : 0) + (n.status ? 22 : 0));

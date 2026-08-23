@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { PILL_H, pillW, labelOf, computeLayout } from "./layout.js";
+import { PILL_H, pillW, labelOf, computeLayout, ZOOM_SPEED, ZOOM_MIN, ZOOM_MAX } from "./layout.js";
 import { TaskPill } from "./nodes.jsx";
 import { statusByKey, typeByKey } from "./model.js";
 import { toMarkdown } from "./markdown.js";
@@ -70,7 +70,7 @@ export default function Backlog({ nodes, size, onReturn, onDelete }) {
     const onWheel = (e) => {
       e.preventDefault();
       setView((v) => {
-        const k = Math.min(3, Math.max(0.12, v.k * Math.exp(-e.deltaY * 0.0016)));
+        const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * Math.exp(-e.deltaY * ZOOM_SPEED)));
         const rect = el.getBoundingClientRect();
         const px = e.clientX - rect.left, py = e.clientY - rect.top;
         return clampView({ k, x: px - ((px - v.x) / v.k) * k, y: py - ((py - v.y) / v.k) * k });
