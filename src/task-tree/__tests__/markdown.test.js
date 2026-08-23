@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMarkdown, toMarkdown, migrateNodes } from "../markdown.js";
+import { parseMarkdown, toMarkdown, migrateNodes, mergeById } from "../markdown.js";
 
 describe("parseMarkdown", () => {
   it("nests by indentation", () => {
@@ -44,6 +44,46 @@ describe("toMarkdown / roundtrip", () => {
   it("serialises description lines with a > prefix", () => {
     const out = toMarkdown(parseMarkdown("- Task\n  > note"));
     expect(out).toContain("  > note");
+  });
+  it("keeps the human export id-free by default", () => {
+    expect(toMarkdown(parseMarkdown("- Task"))).toBe("- Task\n");
+  });
+});
+
+describe("id + blocked-by round-trip (ids mode)", () => {
+  it("preserves stable ids and blocked-by links through a round-trip", () => {
+    const nodes = [
+      { id: "a1", title: "Blocker", status: null, type: null, important: false, desc: "", blockedBy: [], children: [] },
+      { id: "b2", title: "Blocked", status: null, type: null, important: false, desc: "", blockedBy: ["a1"], children: [] },
+    ];
+    const md = toMarkdown(nodes, 0, { ids: true });
+    expect(md).toContain("^a1");
+    expect(md).toContain("⛓ blocked-by: ^a1");
+    const back = parseMarkdown(md);
+    expect(back[0].id).toBe("a1");
+    expect(back[1].id).toBe("b2");
+    expect(back[1].blockedBy).toEqual(["a1"]);
+  });
+  it("mints a fresh id for a hand-written bullet without a marker", () => {
+    const [n] = parseMarkdown("- Just typed this");
+    expect(n.id).toMatch(/^n/);
+  });
+});
+
+describe("mergeById", () => {
+  it("carries createdAt/doneAt over from the node with the same id", () => {
+    const parsed = parseMarkdown("- Kept ✅ ^keep\n- New task");
+    const existing = [{ id: "keep", createdAt: 111, doneAt: 222, children: [] }];
+    const [kept, fresh] = mergeById(parsed, existing, 999);
+    expect(kept.createdAt).toBe(111);
+    expect(kept.doneAt).toBe(222); // preserved, clock not reset
+    expect(fresh.doneAt).toBeNull();
+  });
+  it("stamps doneAt now when the file newly marks a node done", () => {
+    const parsed = parseMarkdown("- Finish ✅ ^x");
+    const existing = [{ id: "x", createdAt: 1, doneAt: null, children: [] }];
+    const [n] = mergeById(parsed, existing, 999);
+    expect(n.doneAt).toBe(999);
   });
 });
 

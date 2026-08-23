@@ -63,6 +63,14 @@ export function migrateNodes(nodes, now = Date.now()) {
   });
 }
 
+// Pull a trailing `^id` marker (written by toMarkdown's id mode) off a title,
+// so it survives a round-trip instead of being read as part of the title.
+function stripId(title) {
+  const m = title.match(/\s+\^(\S+)$/);
+  if (!m) return null;
+  return { id: m[1], title: title.slice(0, m.index).trim() };
+}
+
 export function parseMarkdown(text) {
   const roots = [];
   const stack = []; // {indent, node}
@@ -77,6 +85,9 @@ export function parseMarkdown(text) {
       let status = bullet[2] && bullet[2].toLowerCase() === "x" ? "done" : null;
       let type = null;
       let important = false;
+      let id = null;
+      const idm = stripId(title);
+      if (idm) { id = idm.id; title = idm.title; }
       const bolded = stripBold(title);
       if (bolded !== null) { important = true; title = bolded; }
       const ty = stripType(title);
@@ -85,11 +96,19 @@ export function parseMarkdown(text) {
       if (st) { status = st.key; title = st.title; }
       if (!title) title = "Untitled";
       const node = newNode(title, status, type, important);
+      if (id) node.id = id;
       while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
       if (stack.length) stack[stack.length - 1].node.children.push(node);
       else roots.push(node);
       stack.push({ indent, node });
       last = node;
+      continue;
+    }
+    // `⛓ blocked-by: ^id ^id` metadata line (written by toMarkdown's id mode)
+    const blk = raw.match(/^[ \t]*⛓\s*blocked-by:\s*(.*)$/);
+    if (blk && last) {
+      const ids = blk[1].split(/\s+/).map((x) => x.replace(/^\^/, "")).filter(Boolean);
+      last.blockedBy = [...(last.blockedBy || []), ...ids];
       continue;
     }
     const descLine = raw.match(/^[ \t]*>\s?(.*)$/);
@@ -100,17 +119,43 @@ export function parseMarkdown(text) {
   return roots;
 }
 
-export function toMarkdown(nodes, depth = 0) {
+// `opts.ids` writes a trailing `^id` marker on each bullet and a
+// `⛓ blocked-by:` line for its dependencies, so the file round-trips losslessly
+// (stable ids + cross-tree links) — used for the bidirectional agent-sync file.
+// Left off by default so the human export stays clean.
+export function toMarkdown(nodes, depth = 0, opts = {}) {
   let out = "";
   const pad = "  ".repeat(depth);
   for (const n of nodes) {
     const t = n.type && typeByKey[n.type] ? typeByKey[n.type].emoji + " " : "";
     const s = n.status && statusByKey[n.status] ? " " + statusByKey[n.status].emoji : "";
-    out += `${pad}- ${t}${n.important ? `**${n.title}**` : n.title}${s}\n`;
+    const id = opts.ids && n.id ? ` ^${n.id}` : "";
+    out += `${pad}- ${t}${n.important ? `**${n.title}**` : n.title}${s}${id}\n`;
+    if (opts.ids && n.blockedBy?.length)
+      out += `${pad}  ⛓ blocked-by:${n.blockedBy.map((b) => " ^" + b).join("")}\n`;
     if (n.desc) for (const line of n.desc.split("\n")) out += `${pad}  > ${line}\n`;
-    if (n.children?.length) out += toMarkdown(n.children, depth + 1);
+    if (n.children?.length) out += toMarkdown(n.children, depth + 1, opts);
   }
   return out;
+}
+
+// Reconcile a freshly-parsed file against the tree already in memory: the file
+// is authoritative for structure/title/status/type/importance/desc/blockedBy,
+// but the lifecycle clocks (createdAt, doneAt) are carried over from the node
+// with the same id so a round-trip doesn't reset the leaf-fall / graduation
+// timers. A node whose id isn't found is new (keeps the createdAt newNode gave
+// it); doneAt is stamped now when the file marks a node done that wasn't before.
+export function mergeById(parsed, existing, now = Date.now()) {
+  const prev = new Map();
+  const index = (nodes) => { for (const n of nodes) { prev.set(n.id, n); index(n.children); } };
+  index(existing);
+  const walk = (nodes) => nodes.map((n) => {
+    const old = prev.get(n.id);
+    const createdAt = old ? old.createdAt : n.createdAt;
+    const doneAt = n.status === "done" ? (old && old.doneAt ? old.doneAt : now) : null;
+    return { ...n, createdAt, doneAt, children: walk(n.children) };
+  });
+  return walk(parsed);
 }
 
 export const SAMPLE_MD = `- Plan the garden 💻

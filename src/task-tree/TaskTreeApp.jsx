@@ -3,7 +3,8 @@ import {
   STATUSES, TYPES, setVocab, newNode, updateNode, addChild, removeNode, findNode,
   countNodes, countDone, addDep, removeDep, dropDepsFor, pruneDeps, predictType,
 } from "./model.js";
-import { parseMarkdown, toMarkdown, migrateNodes, SAMPLE_MD } from "./markdown.js";
+import { parseMarkdown, toMarkdown, migrateNodes, mergeById, SAMPLE_MD } from "./markdown.js";
+import { saveHandle, loadHandle, deleteHandle, verifyPermission } from "./fileHandle.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout, ZOOM_SPEED, ZOOM_MIN, ZOOM_MAX } from "./layout.js";
 import {
   RootHub, TaskPill, DoneLeaf, DoneTwig, DragGhost, Butterflies, makeFlock, FallingLeaves,
@@ -69,6 +70,7 @@ export default function TaskTreeApp() {
   const [syncState, setSyncState] = useState("idle"); // idle | syncing | synced | error
   const [syncFileName, setSyncFileName] = useState(null);
   const [syncedToast, setSyncedToast] = useState(null); // {name, key} — shown on Cmd+S sync
+  const [fileChanged, setFileChanged] = useState(false); // linked file edited on disk since we last wrote/read it
   const [structureRev, setStructureRev] = useState(0);
   const [size, setSize] = useState({ w: 1000, h: 700 });
   const [canUndo, setCanUndo] = useState(false);
@@ -96,6 +98,7 @@ export default function TaskTreeApp() {
   const fallTimer = useRef(null);
   const fellTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
+  const lastSyncMTime = useRef(0); // file.lastModified as of our last write/read, to spot external edits
   const syncExportRef = useRef(null); // latest syncExport, so the once-bound Cmd+S handler writes fresh content
   const syncTimer = useRef(null);
   const syncedToastTimer = useRef(null);
@@ -730,6 +733,36 @@ export default function TaskTreeApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, []); // eslint-disable-line
 
+  /* ----- linked-file reverse flow -----
+     Restore the per-project sync handle across reloads/switches, and notice
+     external edits (agent/CLI writes) when the window regains focus. */
+  useEffect(() => {
+    if (!activeId) return;
+    let cancelled = false;
+    (async () => {
+      const handle = await loadHandle(activeId);
+      if (cancelled || !handle) return;
+      syncHandle.current = handle;
+      setSyncFileName(handle.name);
+      try { lastSyncMTime.current = (await handle.getFile()).lastModified; } catch (e) { /* needs a gesture to read */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeId]);
+
+  useEffect(() => {
+    const check = async () => {
+      const handle = syncHandle.current;
+      if (!handle) return;
+      try {
+        if ((await handle.queryPermission({ mode: "read" })) !== "granted") return;
+        const m = (await handle.getFile()).lastModified;
+        if (m > lastSyncMTime.current) setFileChanged(true);
+      } catch (e) { /* ignore */ }
+    };
+    window.addEventListener("focus", check);
+    return () => window.removeEventListener("focus", check);
+  }, []);
+
   /* ----- projects ----- */
 
   // Write the active project's current stores to their keys now, without waiting
@@ -762,8 +795,10 @@ export default function TaskTreeApp() {
     setDragState(null);
     setConfirmDelete(false);
     syncHandle.current = null;
+    lastSyncMTime.current = 0;
     setSyncFileName(null);
     setSyncState("idle");
+    setFileChanged(false);
     setPlanted(null);
     setBacklogged(null);
     setFell(null);
@@ -845,6 +880,7 @@ export default function TaskTreeApp() {
     [docKey, forestKey, backlogKey, litterKey].forEach((k) =>
       window.storage.delete(k(id)).catch(() => {})
     );
+    deleteHandle(id);
 
     let remaining = projects.filter((p) => p.id !== id);
     let nextActive = activeId;
@@ -1147,7 +1183,10 @@ export default function TaskTreeApp() {
     setModal(null);
   };
 
-  const exportMd = doc ? toMarkdown(doc.children) : "";
+  const exportMd = doc ? toMarkdown(doc.children) : ""; // clean, human copy
+  // What we write to the linked file: ids + blocked-by markers, so an external
+  // edit round-trips back losslessly.
+  const syncMd = doc ? toMarkdown(doc.children, 0, { ids: true }) : "";
   const copyExport = async () => {
     try {
       await navigator.clipboard.writeText(exportMd);
@@ -1192,6 +1231,7 @@ export default function TaskTreeApp() {
       });
       syncHandle.current = handle;
       setSyncFileName(handle.name);
+      if (activeId) saveHandle(activeId, handle);
       await writeSyncFile(handle, opts);
     } catch (e) {
       if (e?.name !== "AbortError") setSyncState("error");
@@ -1202,9 +1242,34 @@ export default function TaskTreeApp() {
     setSyncState("syncing");
     try {
       const writable = await handle.createWritable();
-      await writable.write(exportMd);
+      await writable.write(syncMd);
       await writable.close();
+      try { lastSyncMTime.current = (await handle.getFile()).lastModified; } catch (e) { /* best effort */ }
+      setFileChanged(false);
       flashSynced(handle.name, opts?.toast);
+    } catch (e) {
+      setSyncState("error");
+    }
+  };
+
+  // Reverse flow: pull the linked file back into the tree. The file is
+  // authoritative for structure/status/links; mergeById carries the leaf-fall
+  // clocks over from the nodes already in memory so a round-trip doesn't reset
+  // them. Undoable, so a surprising external edit can be reversed.
+  const reloadFromFile = async () => {
+    const handle = syncHandle.current;
+    if (!handle) return;
+    try {
+      if (!(await verifyPermission(handle))) { setSyncState("error"); return; }
+      const file = await handle.getFile();
+      const text = await file.text();
+      const parsed = migrateNodes(parseMarkdown(text));
+      commit();
+      setDoc((d) => ({ ...d, children: pruneDeps(mergeById(parsed, d.children)) }));
+      lastSyncMTime.current = file.lastModified;
+      setFileChanged(false);
+      bumpStructure();
+      flashSynced(handle.name, false);
     } catch (e) {
       setSyncState("error");
     }
@@ -1618,6 +1683,17 @@ export default function TaskTreeApp() {
           </div>
         )}
 
+        {/* linked file edited on disk (agent/CLI) — offer to pull it in */}
+        {fileChanged && !syncedToast && (
+          <div className="tt-toast" key="file-changed">
+            <span className="tt-toast-icon">⟳</span>
+            <span className="tt-toast-text">
+              {syncFileName ? <>“{syncFileName}” changed on disk.</> : <>Linked file changed on disk.</>}
+            </span>
+            <button className="tt-toast-undo" onClick={reloadFromFile}>Reload</button>
+          </div>
+        )}
+
         {/* deleted-project toast, with undo */}
         {deletedProject && (
           <div className="tt-toast" key={deletedProject.key}>
@@ -1684,6 +1760,9 @@ export default function TaskTreeApp() {
           onClose={() => setModal(null)}
           onSync={syncExport}
           onPickSyncFile={pickSyncFile}
+          onReload={reloadFromFile}
+          canReload={!!syncFileName}
+          fileChanged={fileChanged}
           syncState={syncState}
           syncFileName={syncFileName}
         />

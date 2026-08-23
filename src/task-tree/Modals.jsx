@@ -173,6 +173,9 @@ export function ExportModal({
   onClose,
   onSync,
   onPickSyncFile,
+  onReload,
+  canReload,
+  fileChanged,
   syncState,
   syncFileName,
 }) {
@@ -191,10 +194,14 @@ export function ExportModal({
             Syncing to <code>{syncFileName}</code>
             {" · "}
             <button type="button" className="tt-linkbtn" onClick={onPickSyncFile}>change file</button>
+            {fileChanged && <> · <strong>changed on disk</strong></>}
           </p>
         )}
         <div className="tt-modal-actions">
           <button className="tt-btn ghost" onClick={onClose}>Close</button>
+          {canReload && (
+            <button className="tt-btn ghost" onClick={onReload} disabled={syncState === "syncing"}>Reload from file</button>
+          )}
           <button className="tt-btn ghost" onClick={onSync} disabled={syncState === "syncing"}>{syncLabel}</button>
           <button className="tt-btn solid" onClick={onCopy}>{copied ? "Copied ✓" : "Copy"}</button>
         </div>
