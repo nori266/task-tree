@@ -108,4 +108,27 @@ describe("computeLayout lane compaction", () => {
       }
     }
   });
+
+  it("never overlaps any two node rectangles, even with wide titles", () => {
+    // mix long and short titles across several depths so pill widths vary and
+    // the fixed depth pitch alone would collide neighbouring columns.
+    const wide = (id) => ({ id, title: `a really quite long task title ${id}`, blockedBy: [], children: [] });
+    const doc = { title: "root project", children: [
+      { id: "P1", title: "a really quite long parent title", blockedBy: [], children: [wide("a"), leaf("b"), wide("c")] },
+      { id: "P2", title: "short", blockedBy: [], children: [leaf("d"), wide("e"), chain("t", 4)[0]] },
+      { id: "P3", title: "another lengthy branch heading here", blockedBy: [], children: [wide("f"), wide("g")] },
+    ] };
+    const { nodes } = computeLayout(doc, size, new Set());
+    const rect = (n) => {
+      const hw = n.d.depth === 0 ? 20 : pillW(n.d.data) / 2;
+      return { l: n.x - hw, r: n.x + hw, t: n.y - PILL_H / 2, b: n.y + PILL_H / 2 };
+    };
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const A = rect(nodes[i]), B = rect(nodes[j]);
+        const overlap = A.l < B.r && B.l < A.r && A.t < B.b && B.t < A.b;
+        expect(overlap, `${nodes[i].d.data.id} overlaps ${nodes[j].d.data.id}`).toBe(false);
+      }
+    }
+  });
 });

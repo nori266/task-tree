@@ -18,6 +18,12 @@ The core loop it supports: dive into a branch, break a task into sub-tasks as co
 - Lines starting with `>` become the description of the item above.
 - Import can **replace** the tree or **append** to it; export writes the same format back.
 
+**Sync to a file.** Beyond one-shot export, the tree can be bound to a markdown file on disk and written back to it on demand (a one-way tree → file mirror). The first sync opens a file picker (File System Access API) and the chosen file's handle is retained for the session; every sync after that writes to it silently, with a "synced" indicator and a toast naming the file. **⌘S / Ctrl+S** triggers a sync from anywhere in the app (the first press per session opens the picker, since it's a real user gesture). Browsers without the File System Access API fall back to a plain download, and the handle lives only in memory, so a reload re-arms it on the next sync.
+
+**Projects.** Several independent projects can coexist, each a self-contained workspace with its own Tree, Forest, Backlog, and litter. A left sidebar (collapsed by default) switches between them and creates, renames, or deletes them; deletion is undoable via a toast. The active project's stores auto-save under per-project storage keys.
+
+**Blocked-by links.** Any task can be marked as blocked by any other, drawn as a dashed, arrowed curve that leaves and enters pills on their nearest vertical edge. Start a link from the panel, then click the blocking task (an ⛓ hint banner guides the pick). A link is removed automatically when either of its two tasks is marked done, since a link to or from finished work no longer blocks anything.
+
 **Three ways a task leaves the Tree.** The Tree only holds live work; everything finished or abandoned exits by one of three routes, so it never silts up.
 
 - **Forest (graduation).** Any fully-done branch with ≥10 subnodes — at *any* depth, not just top level — is lifted out of the Tree and planted in the Forest tab as a tree grown from its own shape. When nested branches qualify in the same tick the outermost wins, so one achievement isn't shredded into several. In ordinary use a nested milestone finishes before the project containing it and graduates on its own, so a long project shows up as a cluster of milestone trees rather than one grand one. Leaves the branch already shed count toward the ≥10, so slow work can't erode below the bar for its own tree.
@@ -36,9 +42,11 @@ The core loop it supports: dive into a branch, break a task into sub-tasks as co
 
 Butterflies now mark the finished branches *below* the graduation threshold (4–9 subnodes) — the wins that erode quietly and would otherwise pass unmarked; bigger ones get the Forest toast instead.
 
-**Auto-balanced tree visualization.** d3 tidy-tree layout sized to the container's aspect ratio, so the tree spreads to use screen space evenly; toggle between **horizontal** (root left) and **radial** (root center) layouts. Auto-fit on load, import, layout switch, and structure changes; manual pan (drag), zoom (wheel/pinch), and a Fit button.
+**Auto-balanced tree visualization.** d3 tidy-tree layout sized to the container's aspect ratio, so the tree spreads to use screen space evenly, laid out horizontally (root left) with organic jitter so branches don't read as a rigid grid. Auto-fit on load, import, and structure changes; manual pan (drag), zoom (wheel/pinch), and a Fit button. Animated layout transitions tween node positions so re-parenting glides instead of snapping. **Node rectangles never overlap:** a final separation pass spreads the depth columns apart to fit the widest pill in each and packs each column vertically, pushing pills apart only where the fixed pitch or the jitter would otherwise let two touch.
 
-**Node editing.** Click a node → side panel (bottom sheet on mobile) to edit title and description, set type (none / call / coding), set status (none + the six statuses), add a sub-task, or delete the subtree (two-step confirm). The 🌳 root hub adds top-level tasks.
+**Node editing.** Click a node → side panel (bottom sheet on mobile) to edit title and description, set type, set status, add a sub-task, mark it blocked by another task, or delete the subtree (two-step confirm). A type is auto-predicted from the title's keywords when none is set yet, and never overrides one already chosen. The 🌳 root hub adds top-level tasks.
+
+**Customizable vocabulary.** The type and status sets aren't fixed: a ✎ icon on each legend heading opens an app-wide editor to change an entry's emoji, label, and colour, or add and remove entries. Saved under `tasktree:vocab`, outside the undo history.
 
 **Keyboard navigation.** Move around the tree without touching the mouse. A dashed **cursor ring** marks the current node and moves by tree relationship; opening it is a separate, deliberate step, so scanning the tree stays calm and no panel flashes open as you move.
 
@@ -59,14 +67,14 @@ The panel *follows* the cursor while it's open, so arrowing browses details node
 
 **Visual language.** Pills show `[type emoji] title [status emoji]` with a thin status-colored bar (only when a status is set); done tasks fade with strikethrough; a small dot marks nodes that have a description; a legend explains both emoji groups. Progress counter (`done/total`) in the top bar.
 
-**Persistence.** The whole document auto-saves (debounced) as JSON to `window.storage` under key `tasktree:doc`, with a save indicator. On load, docs from older schema versions are migrated (`status: "call"` → `type: "call"`, missing `type` field added).
+**Persistence.** Each project's four stores auto-save (debounced) as JSON to `window.storage` under per-project keys, with a save indicator. On load, docs from older schema versions are migrated (`status: "call"` → `type: "call"`, missing `type` field added), and a pre-projects single-tree document is migrated into the first project.
 
 ## Tech notes for continuing work
 
 - **Stack:** single-file React component (`task-tree.jsx`), d3 (only `d3.hierarchy` / `d3.tree`) for layout, hand-rolled SVG rendering, pan/zoom, and pointer-based drag. All CSS lives in a template string in the same file.
 - **Data model:** `doc = { title, children: Node[] }`; `Node = { id, title, desc, status: key|null, type: key|null, important, createdAt, doneAt: number|null, children: Node[] }`. `doneAt` drives the fade/fall clock and is stamped by `stampDone` in the single place status is written (the side panel's `onPatch`); `migrateNodes` back-fills it as *now* for pre-existing done tasks, so the first open after an update doesn't shower away the whole history. Vocabulary in `STATUSES` / `TYPES` constants; tree edits go through immutable helpers (`updateNode`, `addChild`, `removeNode`, `findNode`, `migrateNodes`).
 - **Leaf-fall (`leaffall.js`):** `dayIndex` builds a day number from the *local* Y/M/D (not a timestamp division) so a DST shift can't collapse two midnights onto one index. `collectFallen` picks victims, `applyFall` removes an id set and re-dates any parent it empties — reused for graduation removal, since both are "this subtree left the Tree". Neither ever writes a status: only the user marks a task done. The sweep is two-phase: victims are held in flight with the coordinates they had at sweep time and the doc is only patched when the last leaf lands, or the tree would re-layout and the surviving pills would jump underneath them. The commit patches the *current* doc, so an edit made during the ~2s flight isn't lost.
-- **Storage keys:** `tasktree:doc`, `tasktree:forest`, `tasktree:backlog`, `tasktree:litter`.
+- **Storage keys:** a project index (`tasktree:projects`), the active project id (`tasktree:activeProject`), the shared vocabulary (`tasktree:vocab`), and four per-project stores keyed by project id (doc / forest / backlog / litter) — see `projects.js` for the key helpers and the legacy-migration path.
 - **Rendering pipeline:** `layout` useMemo builds a synthetic root (`id: "__root"`) → d3 tree → `{nodes, links}` in world coordinates → one `<g transform>` applies the view `{x, y, k}`. `fitView` computes the bounding box (using per-node `pillW`) and recenters; `structureRev` bumps trigger refit.
 - **Environment:** built as a claude.ai artifact — `window.storage` is the artifact key-value API. To run locally (Vite + React), shim `window.storage` onto `localStorage` before mounting (see repo setup notes / main.jsx). No backend, no localStorage direct usage in the component itself.
 - **Interaction subtleties worth preserving:** node pointer-down uses `setPointerCapture`; a 7px movement threshold distinguishes drag from click; `suppressClick` prevents the post-drag click from selecting; wheel zoom is attached natively with `{ passive: false }`.
@@ -77,4 +85,4 @@ Prioritized for ADHD benefit:
 1. **Focus mode / branch zoom** — double-click makes a node the temporary root; its subtree fills the screen, breadcrumb to climb back (targets overwhelm; highest expected impact).
 2. **"Next up" spotlight** — dim everything except ⏭️/💻 nodes (or the shallowest unblocked leaf) to answer "what do I do now?" (targets task initiation).
 3. **Completion feedback** — fold-closed animation on done, progress rings on parents, offer to complete a parent when all children are done (immediate reward).
-4. **Collapse/expand branches** with hidden-count badges; **sibling reordering** during drag (drop into gaps between pills); animated layout transitions; multiple named trees.
+4. **Collapse/expand branches** with hidden-count badges; **sibling reordering** during drag (drop into gaps between pills).

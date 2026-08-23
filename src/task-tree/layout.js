@@ -68,6 +68,7 @@ export function computeLayout(doc, size, doneBranchIds) {
   const pos = new Map(nodes.map((n) => [n.d, n]));
   compactLanes(pos, h);
   naturalize(nodes);
+  separate(nodes);
   const links = h.links().map((l) => {
     const s = pos.get(l.source), t = pos.get(l.target);
     return {
@@ -136,6 +137,58 @@ function compactLanes(pos, root) {
     pos.get(d).y = (first + last) / 2;
   };
   pack(root);
+}
+
+// Effective drawn half-width of a node's rectangle. The root renders as the
+// small 🌳 hub, not a pill (see fitView / nodes.jsx), so it gets a fixed box.
+const halfW = (n) => (n.d.depth === 0 ? 20 : pillW(n.d.data) / 2);
+
+// Final guarantee that no two pill rectangles overlap. The tidy-tree spaces
+// depths at a single pitch and the organic jitter nudges nodes off-grid, so a
+// wide title or a large nudge can leave rectangles touching. Two passes fix it
+// while only ever pushing nodes further apart, so the jitter survives wherever
+// there is already room: first spread the depth columns apart horizontally,
+// then space nodes within each column vertically. A node in one depth column
+// can only overlap a node in another column horizontally (fixed by pass 1) and
+// a node in its own column vertically (fixed by pass 2), so together these
+// leave no possible overlap.
+function separate(nodes) {
+  const HGAP = 16; // min horizontal gap between adjacent depth columns
+  const VGAP = 8;  // min vertical gap between two pills sharing a column
+  const cols = new Map(); // depth → nodes in that column
+  for (const n of nodes) {
+    const col = cols.get(n.d.depth);
+    if (col) col.push(n); else cols.set(n.d.depth, [n]);
+  }
+  const depths = [...cols.keys()].sort((a, b) => a - b);
+
+  // Horizontal: sweep columns left→right; when a column's left edge intrudes on
+  // the previous column's right edge, shift it and every deeper column right.
+  let prevRight = -Infinity;
+  for (const depth of depths) {
+    const col = cols.get(depth);
+    let left = Infinity, right = -Infinity;
+    for (const n of col) {
+      left = Math.min(left, n.x - halfW(n));
+      right = Math.max(right, n.x + halfW(n));
+    }
+    if (left < prevRight + HGAP) {
+      const dx = prevRight + HGAP - left;
+      for (const d2 of depths) if (d2 >= depth) for (const n of cols.get(d2)) n.x += dx;
+      right += dx;
+    }
+    prevRight = right;
+  }
+
+  // Vertical: within each column, sort top→bottom and push any pill down until
+  // it clears the one above it.
+  for (const depth of depths) {
+    const col = cols.get(depth).sort((a, b) => a.y - b.y);
+    for (let i = 1; i < col.length; i++) {
+      const minY = col[i - 1].y + PILL_H + VGAP;
+      if (col[i].y < minY) col[i].y = minY;
+    }
+  }
 }
 
 // Parent→child edge: a horizontal S-curve between two node centres.
