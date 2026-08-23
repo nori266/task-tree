@@ -55,7 +55,31 @@
 .tt-progress { color: var(--muted); font-size: 12.5px; }
 .tt-progress em { font-style: normal; opacity: .8; }
 .tt-progress .err { color: #B06A5A; }
-.tt-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.tt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* node-name search */
+.tt-search {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border: 1px solid #D6DED4; border-radius: 9px;
+  background: var(--pill);
+}
+.tt-search:focus-within { border-color: var(--accent); }
+.tt-search-icon { font-size: 12px; opacity: .7; }
+.tt-search-input {
+  border: none; background: transparent; outline: none;
+  font: inherit; font-size: 13px; color: var(--ink); width: 150px;
+}
+.tt-search-input::placeholder { color: var(--muted); }
+.tt-search-count {
+  color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums;
+  padding: 0 2px; white-space: nowrap;
+}
+.tt-search-nav {
+  border: none; background: transparent; color: var(--muted);
+  padding: 0 5px; border-radius: 6px; font-size: 13px; line-height: 1.6;
+}
+.tt-search-nav:hover:not(:disabled) { background: #E4E9E2; color: var(--ink); }
+.tt-search-nav:disabled { opacity: .35; cursor: default; }
 
 .tt-btn {
   border-radius: 9px; padding: 7px 13px; border: 1px solid transparent;
@@ -183,6 +207,11 @@
   stroke-dasharray: 4 4; opacity: .8; pointer-events: none;
 }
 .tt-cursor-ring.round { stroke-width: 1.8; }
+.tt-search-ring {
+  fill: rgba(224,169,79,.14); stroke: #E0A94F; stroke-width: 2;
+  pointer-events: none;
+}
+.tt-search-ring.round { fill: none; }
 .tt-pill-emoji { font-size: 13px; }
 .tt-pill-title {
   font-size: 12.5px; font-weight: 500; fill: var(--ink);

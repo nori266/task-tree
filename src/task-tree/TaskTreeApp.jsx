@@ -52,6 +52,8 @@ export default function TaskTreeApp() {
   const [sweepTick, setSweepTick] = useState(0); // re-checks ages while the app stays open
   const [selectedId, setSelectedId] = useState(null);
   const [cursorId, setCursorId] = useState(null); // keyboard navigation cursor (ring only, no panel)
+  const [search, setSearch] = useState(""); // node-name search query
+  const [searchIdx, setSearchIdx] = useState(0); // index of the current match
   const [linkingId, setLinkingId] = useState(null); // dependent node awaiting a blocker pick
   const [focusId, setFocusId] = useState(null); // when set, only this node's subtree is shown
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
@@ -77,6 +79,7 @@ export default function TaskTreeApp() {
   const containerRef = useRef(null);
   const svgWrapRef = useRef(null);
   const titleInputRef = useRef(null);
+  const searchInputRef = useRef(null);
   const drag = useRef(null);
   const nodeDrag = useRef(null); // pointer bookkeeping for drag-to-reparent
   const [dragState, setDragState] = useState(null); // {id, x, y, over} while dragging a node
@@ -539,6 +542,44 @@ export default function TaskTreeApp() {
 
   useEffect(() => { fitView(); }, [structureRev, size.w, size.h, focusId]); // eslint-disable-line
 
+  /* ----- search among tree nodes by name -----
+     Matches are drawn from the laid-out nodes (so each has a screen position to
+     centre on, and focus mode narrows the search to the focused subtree). Ranked
+     top-to-bottom so ⏎ / the arrows step through them in reading order. */
+  const searchMatchIds = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return [];
+    return layout.nodes
+      .filter((n) => n.d.depth > 0 && n.d.data.title.toLowerCase().includes(q))
+      .sort((a, b) => a.y - b.y || a.x - b.x)
+      .map((n) => n.d.data.id);
+  }, [search, layout]);
+  const searchMatchSet = useMemo(() => new Set(searchMatchIds), [searchMatchIds]);
+
+  const centerOn = useCallback((id) => {
+    const n = layout.nodes.find((m) => m.d.depth > 0 && m.d.data.id === id);
+    if (!n) return;
+    setView((v) => clampView({ ...v, x: size.w / 2 - n.x * v.k, y: size.h / 2 - n.y * v.k }));
+  }, [layout, size, clampView]);
+
+  const gotoMatch = useCallback((idx) => {
+    const ids = searchMatchIds;
+    if (!ids.length) return;
+    const i = ((idx % ids.length) + ids.length) % ids.length;
+    setSearchIdx(i);
+    const id = ids[i];
+    setSelectedId(id);
+    setCursorId(id);
+    setConfirmDelete(false);
+    centerOn(id);
+  }, [searchMatchIds, centerOn]);
+
+  /* A new query jumps to its first match; clearing it leaves selection alone. */
+  useEffect(() => {
+    if (!search.trim()) { setSearchIdx(0); return; }
+    if (searchMatchIds.length) gotoMatch(0);
+  }, [search]); // eslint-disable-line
+
   /* ----- pan & zoom ----- */
   useEffect(() => {
     const el = svgWrapRef.current;
@@ -676,6 +717,11 @@ export default function TaskTreeApp() {
       } else if (k === "s") {
         e.preventDefault(); // stop the browser's "save page" dialog
         syncExportRef.current?.({ toast: true });
+      } else if (k === "f") {
+        e.preventDefault(); // stop the browser's own find bar
+        setTab("tree");
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1218,6 +1264,50 @@ export default function TaskTreeApp() {
           )}
         </div>
         <div className="tt-actions">
+          {tab === "tree" && (
+            <div className="tt-search">
+              <span className="tt-search-icon">🔍</span>
+              <input
+                ref={searchInputRef}
+                className="tt-search-input"
+                type="text"
+                placeholder="Search tasks…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); gotoMatch(searchIdx + (e.shiftKey ? -1 : 1)); }
+                  else if (e.key === "Escape") { setSearch(""); e.currentTarget.blur(); }
+                }}
+              />
+              {search.trim() && (
+                <>
+                  <span className="tt-search-count">
+                    {searchMatchIds.length ? `${searchIdx + 1}/${searchMatchIds.length}` : "0"}
+                  </span>
+                  <button
+                    className="tt-search-nav"
+                    onClick={() => gotoMatch(searchIdx - 1)}
+                    disabled={!searchMatchIds.length}
+                    title="Previous match (⇧⏎)"
+                    aria-label="Previous match"
+                  >↑</button>
+                  <button
+                    className="tt-search-nav"
+                    onClick={() => gotoMatch(searchIdx + 1)}
+                    disabled={!searchMatchIds.length}
+                    title="Next match (⏎)"
+                    aria-label="Next match"
+                  >↓</button>
+                  <button
+                    className="tt-search-nav"
+                    onClick={() => { setSearch(""); searchInputRef.current?.focus(); }}
+                    title="Clear search"
+                    aria-label="Clear search"
+                  >×</button>
+                </>
+              )}
+            </div>
+          )}
           {tab === "tree" && (selectedId || focusId) && (
             <button
               className="tt-btn ghost"
@@ -1347,6 +1437,7 @@ export default function TaskTreeApp() {
                   y: n.y,
                   faded: fadedIds.has(data.id),
                   isCursor,
+                  isMatch: searchMatchSet.has(data.id),
                   isDrop: dragState?.over === data.id,
                   isDragging: dragState?.id === data.id,
                   handlers: {
