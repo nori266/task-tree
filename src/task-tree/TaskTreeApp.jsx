@@ -79,6 +79,7 @@ export default function TaskTreeApp() {
   const [activeId, setActiveId] = useState(null); // active project id
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [deletedProject, setDeletedProject] = useState(null); // {meta, raws, at, key} undo toast
+  const [movedNode, setMovedNode] = useState(null); // {node, fromId, toId, toTitle, fromDoc, key} undo toast
 
   const containerRef = useRef(null);
   const svgWrapRef = useRef(null);
@@ -103,6 +104,7 @@ export default function TaskTreeApp() {
   const syncTimer = useRef(null);
   const syncedToastTimer = useRef(null);
   const deletedTimer = useRef(null);
+  const movedTimer = useRef(null);
 
   /* ----- undo/redo -----
      Every undoable action snapshots the four persistent stores (doc, forest,
@@ -935,6 +937,7 @@ export default function TaskTreeApp() {
   };
 
   useEffect(() => () => clearTimeout(deletedTimer.current), []);
+  useEffect(() => () => clearTimeout(movedTimer.current), []);
   useEffect(() => () => clearTimeout(syncedToastTimer.current), []);
 
   const handleAddChild = (parentId) => {
@@ -962,6 +965,71 @@ export default function TaskTreeApp() {
     setDoc((d) => ({ ...d, children: pruneDeps(removeNode(d.children, id)) }));
     setSelectedId(null);
     setConfirmDelete(false);
+    // no bumpStructure(): deleting a node must leave the pan/zoom exactly as it was
+  };
+
+  /* Move a node (with its whole subtree) into another project. The subtree is
+     appended to the target project's stored doc; blocked-by links that reached
+     outside the subtree are dropped on both sides, since dependencies never
+     span projects. A cross-project move can't ride the per-project undo stack —
+     a later global undo would restore the source copy while the target copy
+     lives on — so history is reset (as it is when switching/deleting projects)
+     and the move gets its own toast undo that reverses both sides. */
+  const moveNodeToProject = async (id, targetId) => {
+    if (!doc || !id || !targetId || targetId === activeId) return;
+    const node = findNode(doc.children, id);
+    if (!node) return;
+
+    const fromDoc = doc; // faithful source snapshot for the toast undo
+    const [moved] = pruneDeps([node]);
+
+    const target = await readStores(targetId);
+    await window.storage.set(
+      docKey(targetId),
+      JSON.stringify({ ...target.doc, children: [...target.doc.children, moved] })
+    );
+
+    if (id === focusId) setFocusId(null);
+    if (id === linkingId) setLinkingId(null);
+    setDoc((d) => ({ ...d, children: pruneDeps(removeNode(d.children, id)) }));
+    setSelectedId(null);
+    setConfirmDelete(false);
+
+    past.current = [];
+    future.current = [];
+    setCanUndo(false);
+    setCanRedo(false);
+    editCoalesce.current = { id: null, at: 0 };
+
+    const toTitle = projects.find((p) => p.id === targetId)?.title || "Untitled";
+    clearTimeout(movedTimer.current);
+    setMovedNode({ node: moved, fromId: activeId, toId: targetId, toTitle, fromDoc, key: Date.now() });
+    movedTimer.current = setTimeout(() => setMovedNode(null), 7000);
+  };
+
+  const undoMoveNode = async () => {
+    if (!movedNode) return;
+    const { node, fromId, toId, fromDoc } = movedNode;
+    clearTimeout(movedTimer.current);
+    setMovedNode(null);
+
+    // take it back out of the target
+    if (toId === activeId) {
+      setDoc((d) => ({ ...d, children: removeNode(d.children, node.id) }));
+    } else {
+      const t = await readStores(toId);
+      await window.storage.set(
+        docKey(toId),
+        JSON.stringify({ ...t.doc, children: removeNode(t.doc.children, node.id) })
+      );
+    }
+
+    // and put the source back exactly as it was
+    if (fromId === activeId) {
+      setDoc(fromDoc);
+    } else {
+      await window.storage.set(docKey(fromId), JSON.stringify(fromDoc));
+    }
     bumpStructure();
   };
 
@@ -1704,6 +1772,18 @@ export default function TaskTreeApp() {
             <button className="tt-toast-undo" onClick={undoDeleteProject}>Undo</button>
           </div>
         )}
+
+        {/* moved-node toast, with undo */}
+        {movedNode && (
+          <div className="tt-toast" key={movedNode.key}>
+            <span className="tt-toast-icon">📦</span>
+            <span className="tt-toast-text">
+              Moved “{labelOf(movedNode.node.title || "Untitled")}” to “{labelOf(movedNode.toTitle || "Untitled")}”.
+            </span>
+            <button className="tt-toast-undo" onClick={undoMoveNode}>Undo</button>
+            <button className="tt-toast-go" onClick={() => switchProject(movedNode.toId)}>View</button>
+          </div>
+        )}
       </div>
       </div>
 
@@ -1737,6 +1817,8 @@ export default function TaskTreeApp() {
         linking={selected && selected.id === linkingId}
         onStartLink={() => selected && startLinking(selected.id)}
         onRemoveDep={(blockerId) => selected && handleRemoveDep(selected.id, blockerId)}
+        moveTargets={projects.filter((p) => p.id !== activeId)}
+        onMoveToProject={(targetId) => selected && moveNodeToProject(selected.id, targetId)}
       />
 
       {/* modals */}

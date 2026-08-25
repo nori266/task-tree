@@ -7,6 +7,7 @@ export default function Panel({
   selected, titleInputRef, confirmDelete, setConfirmDelete,
   onPatch, onAddChild, onImportChild, onDelete, onClose,
   blockers = [], linking = false, onStartLink, onRemoveDep,
+  moveTargets = [], onMoveToProject,
 }) {
   return (
     <aside className={`tt-panel ${selected ? "open" : ""}`}>
@@ -125,6 +126,21 @@ export default function Panel({
             <button className="tt-btn ghost wide" onClick={onImportChild}>
               Import sub-tasks from .md
             </button>
+            {moveTargets.length > 0 && (
+              <label className="tt-move">
+                <span>Move to project{selected.children.length ? " (with sub-tasks)" : ""}</span>
+                <select
+                  className="tt-move-select"
+                  value=""
+                  onChange={(e) => e.target.value && onMoveToProject(e.target.value)}
+                >
+                  <option value="">Choose project…</option>
+                  {moveTargets.map((p) => (
+                    <option key={p.id} value={p.id}>{p.title || "Untitled"}</option>
+                  ))}
+                </select>
+              </label>
+            )}
             <button
               className={`tt-btn danger wide ${confirmDelete ? "confirm" : ""}`}
               onClick={() => (confirmDelete ? onDelete() : setConfirmDelete(true))}
