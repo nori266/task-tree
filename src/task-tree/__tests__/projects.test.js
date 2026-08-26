@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   newProjectId, docKey, forestKey, backlogKey, litterKey,
   migrateLegacy, INDEX_KEY, ACTIVE_KEY,
+  PROJECT_COLORS, nextProjectColor,
 } from "../projects.js";
 
 // Minimal in-memory stand-in for window.storage: get() throws when absent.
@@ -27,6 +28,17 @@ describe("key builders", () => {
   });
   it("newProjectId is unique", () => {
     expect(newProjectId()).not.toBe(newProjectId());
+  });
+});
+
+describe("nextProjectColor", () => {
+  it("cycles the palette by project count", () => {
+    expect(nextProjectColor([])).toBe(PROJECT_COLORS[0]);
+    expect(nextProjectColor([{}])).toBe(PROJECT_COLORS[1]);
+    expect(nextProjectColor(new Array(PROJECT_COLORS.length).fill({}))).toBe(PROJECT_COLORS[0]);
+  });
+  it("treats a missing list as empty", () => {
+    expect(nextProjectColor()).toBe(PROJECT_COLORS[0]);
   });
 });
 

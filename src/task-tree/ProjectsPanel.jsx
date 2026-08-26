@@ -1,16 +1,19 @@
 import { useState, useRef, useEffect } from "react";
+import { PROJECT_COLORS } from "./projects.js";
 
 /* Left sidebar listing every project. Click a row to switch; each row renames
    inline (double-click or the ✎ button) and deletes with a two-click confirm.
-   A freshly created project opens straight into its rename field. */
+   A freshly created project opens straight into its rename field. The leading
+   swatch opens a palette to set (or clear) that project's background tint. */
 
 export default function ProjectsPanel({
   projects, activeId, collapsed, onToggle,
-  onSwitch, onCreate, onRename, onDelete,
+  onSwitch, onCreate, onRename, onDelete, onRecolor,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
   const [confirmId, setConfirmId] = useState(null);
+  const [paletteId, setPaletteId] = useState(null);
   const inputRef = useRef(null);
 
   useEffect(() => {
@@ -19,6 +22,15 @@ export default function ProjectsPanel({
       inputRef.current?.select();
     }
   }, [editingId]);
+
+  useEffect(() => {
+    if (!paletteId) return;
+    const onDown = (e) => {
+      if (!e.target.closest?.(".tt-proj-swatch-wrap")) setPaletteId(null);
+    };
+    window.addEventListener("pointerdown", onDown);
+    return () => window.removeEventListener("pointerdown", onDown);
+  }, [paletteId]);
 
   const beginRename = (p) => {
     setConfirmId(null);
@@ -52,6 +64,7 @@ export default function ProjectsPanel({
         {projects.map((p) => {
           const isActive = p.id === activeId;
           const isEditing = p.id === editingId;
+          const showPalette = p.id === paletteId;
           return (
             <li key={p.id} className={`tt-proj-item ${isActive ? "on" : ""}`}>
               {isEditing ? (
@@ -68,6 +81,38 @@ export default function ProjectsPanel({
                 />
               ) : (
                 <>
+                  <span className="tt-proj-swatch-wrap">
+                    <button
+                      className="tt-proj-swatch"
+                      style={{ background: p.color || "transparent" }}
+                      onClick={() => {
+                        setConfirmId(null);
+                        setPaletteId((c) => (c === p.id ? null : p.id));
+                      }}
+                      title="Project color"
+                      aria-label="Set project color"
+                    >{p.color ? "" : "○"}</button>
+                    {showPalette && (
+                      <div className="tt-proj-palette">
+                        {PROJECT_COLORS.map((c) => (
+                          <button
+                            key={c}
+                            className={`tt-proj-chip ${p.color === c ? "on" : ""}`}
+                            style={{ background: c }}
+                            onClick={() => { onRecolor(p.id, c); setPaletteId(null); }}
+                            title={c}
+                            aria-label={`Use ${c}`}
+                          />
+                        ))}
+                        <button
+                          className={`tt-proj-chip none ${!p.color ? "on" : ""}`}
+                          onClick={() => { onRecolor(p.id, null); setPaletteId(null); }}
+                          title="No color"
+                          aria-label="No color"
+                        >✕</button>
+                      </div>
+                    )}
+                  </span>
                   <button
                     className="tt-proj-name"
                     onClick={() => onSwitch(p.id)}

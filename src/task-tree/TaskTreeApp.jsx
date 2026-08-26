@@ -18,7 +18,7 @@ import Linearize from "./Linearize.jsx";
 import ProjectsPanel from "./ProjectsPanel.jsx";
 import {
   INDEX_KEY, ACTIVE_KEY, VOCAB_KEY, docKey, forestKey, backlogKey, litterKey,
-  newProjectId, migrateLegacy, getRaw,
+  newProjectId, migrateLegacy, getRaw, nextProjectColor,
 } from "./projects.js";
 import {
   sweepBacklog, mergeIntoBacklog, takeFromBacklog, graftIntoTree, countBacklogged,
@@ -735,6 +735,25 @@ export default function TaskTreeApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, []); // eslint-disable-line
 
+  /* ctrl+cmd+arrows step through the project list (up/left = previous,
+     down/right = next), wrapping at the ends. */
+  useEffect(() => {
+    const onKey = (e) => {
+      if (!(e.ctrlKey && e.metaKey)) return;
+      let dir = 0;
+      if (e.key === "ArrowUp" || e.key === "ArrowLeft") dir = -1;
+      else if (e.key === "ArrowDown" || e.key === "ArrowRight") dir = 1;
+      if (!dir || projects.length < 2) return;
+      e.preventDefault();
+      const at = projects.findIndex((p) => p.id === activeId);
+      if (at < 0) return;
+      const next = projects[(at + dir + projects.length) % projects.length];
+      switchProject(next.id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [projects, activeId]); // eslint-disable-line
+
   /* ----- linked-file reverse flow -----
      Restore the per-project sync handle across reloads/switches, and notice
      external edits (agent/CLI writes) when the window regains focus. */
@@ -834,7 +853,7 @@ export default function TaskTreeApp() {
     flushActive();
     const id = newProjectId();
     const title = "New project";
-    const next = [...projects, { id, title }];
+    const next = [...projects, { id, title, color: nextProjectColor(projects) }];
     setProjects(next);
     window.storage.set(INDEX_KEY, JSON.stringify(next)).catch(() => {});
     setActiveId(id);
@@ -853,6 +872,14 @@ export default function TaskTreeApp() {
     setProjects(next);
     window.storage.set(INDEX_KEY, JSON.stringify(next)).catch(() => {});
     if (id === activeId) setDoc((d) => (d ? { ...d, title: clean } : d));
+  };
+
+  // Set (or clear, with color = null) a project's background tint. Lives on the
+  // projects index, outside the per-tree undo history.
+  const setProjectColor = (id, color) => {
+    const next = projects.map((p) => (p.id === id ? { ...p, color } : p));
+    setProjects(next);
+    window.storage.set(INDEX_KEY, JSON.stringify(next)).catch(() => {});
   };
 
   const deleteProject = async (id) => {
@@ -1353,6 +1380,7 @@ export default function TaskTreeApp() {
   };
   syncExportRef.current = syncExport;
 
+  const activeColor = projects.find((p) => p.id === activeId)?.color ?? null;
   const selected = doc && selectedId ? findNode(doc.children, selectedId) : null;
   const total = doc ? countNodes(doc.children) : 0;
   const done = doc ? countDone(doc.children) : 0;
@@ -1496,9 +1524,14 @@ export default function TaskTreeApp() {
         onCreate={createProject}
         onRename={renameProject}
         onDelete={deleteProject}
+        onRecolor={setProjectColor}
       />
       {/* canvas */}
-      <div className="tt-canvas" ref={containerRef}>
+      <div
+        className="tt-canvas"
+        ref={containerRef}
+        style={activeColor ? { background: activeColor } : undefined}
+      >
         {tab === "forest" && (
           <Forest achievements={forest} litter={litter} onReturn={returnFromForest} />
         )}

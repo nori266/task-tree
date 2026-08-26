@@ -158,6 +158,28 @@
   text-align: left; padding: 10px 14px; border-top: 1px solid var(--line);
 }
 .tt-proj-new:hover { background: #E4E9E2; }
+
+/* per-project background-color picker */
+.tt-proj-swatch-wrap { position: relative; flex: none; display: inline-flex; margin-left: 4px; }
+.tt-proj-swatch {
+  width: 15px; height: 15px; border-radius: 50%; padding: 0;
+  border: 1px solid var(--line); color: var(--muted);
+  font-size: 9px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+}
+.tt-proj-swatch:hover { border-color: var(--accent); }
+.tt-proj-palette {
+  position: absolute; top: 20px; left: 0; z-index: 20;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+  padding: 6px; border-radius: 10px; background: var(--panel);
+  border: 1px solid var(--line); box-shadow: 0 6px 20px rgba(51,64,58,.18);
+}
+.tt-proj-chip {
+  width: 20px; height: 20px; border-radius: 6px; padding: 0;
+  border: 1px solid var(--pill-border);
+}
+.tt-proj-chip:hover { transform: scale(1.08); }
+.tt-proj-chip.on { border-color: var(--accent); box-shadow: inset 0 0 0 2px var(--panel), 0 0 0 1px var(--accent); }
+.tt-proj-chip.none { background: var(--pill); color: var(--muted); font-size: 11px; line-height: 1; }
 .tt-svgwrap { position: absolute; inset: 0; cursor: grab; touch-action: none; }
 .tt-svgwrap:active { cursor: grabbing; }
 

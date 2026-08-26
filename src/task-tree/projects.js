@@ -18,6 +18,24 @@ const LEGACY = {
   litter: "tasktree:litter",
 };
 
+/* Soft background tints a project can wear, so distinct projects read apart at a
+   glance. Kept pale on purpose — the tree, pills and links sit on top and must
+   stay legible. `color: null` (or absent) means no tint: the default canvas. */
+export const PROJECT_COLORS = [
+  "#EAF2FB", // blue
+  "#FBF0EA", // peach
+  "#EEEAFB", // lavender
+  "#E9F6EE", // mint
+  "#FBEAF1", // pink
+  "#FBF7E6", // butter
+  "#E6F5F6", // aqua
+  "#F0EFEA", // stone
+];
+
+// Cycle the palette by project count so each new project lands on a fresh tint.
+export const nextProjectColor = (projects) =>
+  PROJECT_COLORS[(projects?.length ?? 0) % PROJECT_COLORS.length];
+
 let idCounter = 1;
 export const newProjectId = () => `p${Date.now().toString(36)}_${idCounter++}`;
 
