@@ -97,6 +97,7 @@ export default function TaskTreeApp() {
   const backloggedTimer = useRef(null);
   const lastSweepDay = useRef(null); // day index of the last leaf-fall sweep
   const fallTimer = useRef(null);
+  const pendingFall = useRef(null); // {ids, fallen} of a leaf-fall still mid-flight
   const fellTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
   const lastSyncMTime = useRef(0); // file.lastModified as of our last write/read, to spot external edits
@@ -455,9 +456,11 @@ export default function TaskTreeApp() {
     const flight = reduced ? 520 : (span + 1.85) * 1000;
     const snapshot = { children: doc.children, litter };
     setFalling({ key: now, ids, leaves });
+    pendingFall.current = { ids, fallen };
     clearTimeout(fallTimer.current);
     fallTimer.current = setTimeout(() => {
       const landed = Date.now();
+      pendingFall.current = null;
       // patch the *current* doc rather than the one captured at sweep time, so
       // an edit made during the flight isn't thrown away
       setDoc((d) => ({ ...d, children: applyFall(d.children, ids, landed) }));
@@ -790,7 +793,17 @@ export default function TaskTreeApp() {
   // for the debounced save — used before leaving a project.
   const flushActive = () => {
     if (!activeId) return;
-    const { doc: d, forest: f, backlog: b, litter: l } = liveState.current;
+    let { doc: d, forest: f, backlog: b, litter: l } = liveState.current;
+    // A leaf-fall still mid-flight is landed here, so the leaves persist as
+    // fallen instead of replaying the drop when this project is reopened.
+    const pending = pendingFall.current;
+    if (pending && d) {
+      clearTimeout(fallTimer.current);
+      pendingFall.current = null;
+      const landed = Date.now();
+      d = { ...d, children: applyFall(d.children, pending.ids, landed) };
+      l = [...l, ...pending.fallen.map((leaf) => ({ ...leaf, fallenAt: landed }))];
+    }
     if (d) window.storage.set(docKey(activeId), JSON.stringify(d)).catch(() => {});
     window.storage.set(forestKey(activeId), JSON.stringify(f)).catch(() => {});
     window.storage.set(backlogKey(activeId), JSON.stringify(b)).catch(() => {});
@@ -824,6 +837,8 @@ export default function TaskTreeApp() {
     setBacklogged(null);
     setFell(null);
     setFalling(null);
+    clearTimeout(fallTimer.current);
+    pendingFall.current = null;
     loaded.current = true;
     bumpStructure();
     setSweepTick((x) => x + 1);
