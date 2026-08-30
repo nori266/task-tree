@@ -159,6 +159,14 @@
 }
 .tt-proj-new:hover { background: #E4E9E2; }
 
+.tt-proj-backup { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--line); }
+.tt-proj-backup-btn {
+  flex: 1; border: 1px solid var(--line); background: transparent; color: var(--muted);
+  font-size: 12px; font-weight: 600; padding: 5px 8px; border-radius: 6px; cursor: pointer;
+}
+.tt-proj-backup-btn:hover { background: #E4E9E2; color: var(--ink); }
+.tt-proj-backup-btn.confirm { background: #B06A5A; border-color: #B06A5A; color: #FFF7F4; }
+
 /* per-project background-color picker */
 .tt-proj-swatch-wrap { position: relative; flex: none; display: inline-flex; margin-left: 4px; }
 .tt-proj-swatch {

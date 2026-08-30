@@ -8,11 +8,12 @@ import { PROJECT_COLORS } from "./projects.js";
 
 export default function ProjectsPanel({
   projects, activeId, collapsed, onToggle,
-  onSwitch, onCreate, onRename, onDelete, onRecolor,
+  onSwitch, onCreate, onRename, onDelete, onRecolor, onBackup, onRestore,
 }) {
   const [editingId, setEditingId] = useState(null);
   const [draft, setDraft] = useState("");
   const [confirmId, setConfirmId] = useState(null);
+  const [confirmRestore, setConfirmRestore] = useState(false);
   const [paletteId, setPaletteId] = useState(null);
   const inputRef = useRef(null);
 
@@ -154,6 +155,22 @@ export default function ProjectsPanel({
       >
         + New project
       </button>
+      <div className="tt-proj-backup">
+        <button className="tt-proj-backup-btn" onClick={onBackup} title="Save a full backup of every project to a JSON file">
+          Backup
+        </button>
+        <button
+          className={`tt-proj-backup-btn ${confirmRestore ? "confirm" : ""}`}
+          onClick={() => {
+            if (confirmRestore) { setConfirmRestore(false); onRestore(); }
+            else setConfirmRestore(true);
+          }}
+          onBlur={() => setConfirmRestore(false)}
+          title={confirmRestore ? "Replaces all current projects — click again" : "Restore all projects from a backup file"}
+        >
+          {confirmRestore ? "Replace all?" : "Restore"}
+        </button>
+      </div>
     </aside>
   );
 }

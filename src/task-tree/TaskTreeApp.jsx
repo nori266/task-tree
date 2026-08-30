@@ -5,6 +5,7 @@ import {
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, mergeById, SAMPLE_MD } from "./markdown.js";
 import { saveHandle, loadHandle, deleteHandle, verifyPermission } from "./fileHandle.js";
+import { buildSnapshot, validateSnapshot, restoreSnapshot } from "./backup.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout, ZOOM_SPEED, ZOOM_MIN, ZOOM_MAX } from "./layout.js";
 import {
   RootHub, TaskPill, DoneLeaf, DoneTwig, DragGhost, Butterflies, makeFlock, FallingLeaves,
@@ -1395,6 +1396,76 @@ export default function TaskTreeApp() {
   };
   syncExportRef.current = syncExport;
 
+  /* ----- whole-app backup / restore -----
+     A single JSON snapshot of every project, the index, active id and vocab —
+     complete disaster recovery for a localStorage wipe. Every backup prompts for
+     a destination (no reused handle: it goes stale when the file moves and the
+     re-grant needs a live user gesture the awaits above have already spent).
+     Restore replaces all tasktree keys, then reloads to rehydrate from storage. */
+  const backupNow = async () => {
+    flushActive();
+    const json = JSON.stringify(await buildSnapshot(window.storage), null, 2);
+    const name = `tasktree-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    if (!window.showSaveFilePicker) {
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: name,
+        types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+    } catch (e) {
+      if (e?.name === "AbortError") return;
+      console.error("Task Tree backup failed:", e);
+      window.alert(`Backup failed: ${e?.message || e}`);
+    }
+  };
+
+  const restoreFromBackup = async () => {
+    let text;
+    try {
+      if (window.showOpenFilePicker) {
+        const [handle] = await window.showOpenFilePicker({
+          types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+        });
+        text = await (await handle.getFile()).text();
+      } else {
+        text = await new Promise((resolve, reject) => {
+          const input = document.createElement("input");
+          input.type = "file";
+          input.accept = "application/json,.json";
+          input.onchange = () => {
+            const f = input.files?.[0];
+            if (f) f.text().then(resolve, reject);
+            else reject(new Error("no file"));
+          };
+          input.click();
+        });
+      }
+    } catch (e) {
+      return; // cancelled
+    }
+    let snap;
+    try {
+      snap = validateSnapshot(JSON.parse(text));
+    } catch (e) {
+      window.alert(`Restore failed: ${e.message}`);
+      return;
+    }
+    await restoreSnapshot(window.storage, snap);
+    window.location.reload();
+  };
+
   const activeColor = projects.find((p) => p.id === activeId)?.color ?? null;
   const selected = doc && selectedId ? findNode(doc.children, selectedId) : null;
   const total = doc ? countNodes(doc.children) : 0;
@@ -1540,6 +1611,8 @@ export default function TaskTreeApp() {
         onRename={renameProject}
         onDelete={deleteProject}
         onRecolor={setProjectColor}
+        onBackup={backupNow}
+        onRestore={restoreFromBackup}
       />
       {/* canvas */}
       <div
