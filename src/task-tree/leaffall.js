@@ -2,8 +2,10 @@
 
    A done leaf stays bright for a week after it's finished, fades once it's a
    week old, and a week after that it lets go and falls — down out of the tree
-   and onto the Forest floor as litter. Done work is never silently deleted: the
-   leaf is still there, on the ground, as proof the day happened.
+   and onto the Forest floor as litter. If its branch later graduates, the leaf
+   is replanted on that branch's tree in the Forest instead; the floor keeps
+   only the ones whose branch never graduated. Done work is never silently
+   deleted: the leaf is always somewhere, as proof the day happened.
 
    Ages are counted in local calendar days, not elapsed hours, so "yesterday"
    means yesterday however late you worked. Falling only ever happens on a
@@ -53,7 +55,7 @@ export function fadedIds(children, today) {
 
 /* Done leaves ready to fall, each as {id, title, doneAt, ancestorIds}.
    `ancestorIds` runs from the top-level branch down to the leaf's parent: a
-   fallen leaf banks at the foot of whichever ancestor later graduates to the
+   fallen leaf is replanted on whichever ancestor later graduates to the
    Forest, and graduation counts the leaves a branch has already shed.
 
    Only nodes that are *already* childless are candidates. A parent emptied by
