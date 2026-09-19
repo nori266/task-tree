@@ -39,6 +39,7 @@ const BUTTERFLY_MIN_SUBNODES = 4;  // smaller finished branches erode, so they g
 
 const HISTORY_LIMIT = 100;   // undo depth; older snapshots drop off the bottom
 const EDIT_COALESCE_MS = 700; // consecutive text edits to one task fold into one undo step
+const POLL_MS = 1500;        // how often the linked file is checked for external (CLI/agent) edits
 
 export default function TaskTreeApp() {
   const [doc, setDoc] = useState(null); // {title, children}
@@ -102,6 +103,8 @@ export default function TaskTreeApp() {
   const fellTimer = useRef(null);
   const syncHandle = useRef(null); // retained FileSystemFileHandle for the user-chosen sync file
   const lastSyncMTime = useRef(0); // file.lastModified as of our last write/read, to spot external edits
+  const unsyncedEdits = useRef(false); // in-memory changes made since the last write to / read from the linked file
+  const reloadRef = useRef(null); // latest reloadFromFile, for the poller bound once
   const syncExportRef = useRef(null); // latest syncExport, so the once-bound Cmd+S handler writes fresh content
   const syncTimer = useRef(null);
   const syncedToastTimer = useRef(null);
@@ -653,6 +656,7 @@ export default function TaskTreeApp() {
   const snapshot = () => ({ ...liveState.current });
 
   const restore = (snap) => {
+    unsyncedEdits.current = true;
     setDoc(snap.doc);
     setForest(snap.forest);
     setBacklog(snap.backlog);
@@ -668,6 +672,7 @@ export default function TaskTreeApp() {
 
   // Push the pre-action state onto the undo stack. Call before mutating.
   const commit = () => {
+    unsyncedEdits.current = true;
     past.current.push(snapshot());
     if (past.current.length > HISTORY_LIMIT) past.current.shift();
     future.current = [];
@@ -770,6 +775,7 @@ export default function TaskTreeApp() {
       syncHandle.current = handle;
       setSyncFileName(handle.name);
       try { lastSyncMTime.current = (await handle.getFile()).lastModified; } catch (e) { /* needs a gesture to read */ }
+      unsyncedEdits.current = false;
     })();
     return () => { cancelled = true; };
   }, [activeId]);
@@ -781,11 +787,19 @@ export default function TaskTreeApp() {
       try {
         if ((await handle.queryPermission({ mode: "read" })) !== "granted") return;
         const m = (await handle.getFile()).lastModified;
-        if (m > lastSyncMTime.current) setFileChanged(true);
+        if (m <= lastSyncMTime.current) return;
+        // The file is authoritative on reload, so pull it in on our own only
+        // when nothing in memory would be lost; otherwise offer the toast.
+        if (unsyncedEdits.current) setFileChanged(true);
+        else await reloadRef.current?.({ quiet: true });
       } catch (e) { /* ignore */ }
     };
     window.addEventListener("focus", check);
-    return () => window.removeEventListener("focus", check);
+    const poll = setInterval(check, POLL_MS);
+    return () => {
+      window.removeEventListener("focus", check);
+      clearInterval(poll);
+    };
   }, []);
 
   /* ----- projects ----- */
@@ -1356,6 +1370,7 @@ export default function TaskTreeApp() {
       await writable.write(syncMd);
       await writable.close();
       try { lastSyncMTime.current = (await handle.getFile()).lastModified; } catch (e) { /* best effort */ }
+      unsyncedEdits.current = false;
       setFileChanged(false);
       flashSynced(handle.name, opts?.toast);
     } catch (e) {
@@ -1367,17 +1382,22 @@ export default function TaskTreeApp() {
   // authoritative for structure/status/links; mergeById carries the leaf-fall
   // clocks over from the nodes already in memory so a round-trip doesn't reset
   // them. Undoable, so a surprising external edit can be reversed.
-  const reloadFromFile = async () => {
+  const reloadFromFile = async (opts) => {
     const handle = syncHandle.current;
     if (!handle) return;
     try {
-      if (!(await verifyPermission(handle))) { setSyncState("error"); return; }
+      // A quiet (poller-driven) reload must never prompt: a permission request
+      // outside a user gesture is rejected anyway.
+      if (opts?.quiet) {
+        if ((await handle.queryPermission({ mode: "read" })) !== "granted") return;
+      } else if (!(await verifyPermission(handle))) { setSyncState("error"); return; }
       const file = await handle.getFile();
       const text = await file.text();
       const parsed = migrateNodes(parseMarkdown(text));
       commit();
       setDoc((d) => ({ ...d, children: pruneDeps(mergeById(parsed, d.children)) }));
       lastSyncMTime.current = file.lastModified;
+      unsyncedEdits.current = false;
       setFileChanged(false);
       bumpStructure();
       flashSynced(handle.name, false);
@@ -1395,6 +1415,7 @@ export default function TaskTreeApp() {
     }
   };
   syncExportRef.current = syncExport;
+  reloadRef.current = reloadFromFile;
 
   /* ----- whole-app backup / restore -----
      A single JSON snapshot of every project, the index, active id and vocab —

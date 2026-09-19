@@ -2,8 +2,10 @@
 
 The running app (browser) and you (filesystem) meet at **one linked markdown
 file** — the file the app syncs to via `Ctrl+S` (File System Access API). Edit
-that file and the app pulls your changes in when its window regains focus, or via
-**Reload from file** in the Export modal.
+that file and the app pulls your changes in within a second or two, as long as
+the tab is open and the tree has no unsaved in-memory edits. When it does have
+unsaved edits it shows a *changed on disk* toast instead, so nothing is lost —
+apply it with **Reload**, or via **Reload from file** in the Export modal.
 
 Point the CLI at that file, resolved in this order:
 1. `--file <path>` on the command
