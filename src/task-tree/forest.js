@@ -27,6 +27,7 @@ function replant(root, shed) {
 
   const extra = new Map(); // parent id -> replanted leaf nodes
   for (const l of shed) {
+    if (present.has(l.id)) continue; // already back in the subtree; don't graft a twin
     const anc = (l.ancestorIds || []).filter((id) => present.has(id));
     const parent = anc.length ? anc[anc.length - 1] : root.id;
     const kids = extra.get(parent) || [];

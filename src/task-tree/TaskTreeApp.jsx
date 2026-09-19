@@ -4,7 +4,7 @@ import {
   countNodes, countDone, addDep, removeDep, dropDepsFor, pruneDeps, predictType,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, mergeById, SAMPLE_MD } from "./markdown.js";
-import { saveHandle, loadHandle, deleteHandle, verifyPermission } from "./fileHandle.js";
+import { saveHandle, loadHandle, deleteHandle, clearHandles, verifyPermission } from "./fileHandle.js";
 import { buildSnapshot, validateSnapshot, restoreSnapshot } from "./backup.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout, ZOOM_SPEED, ZOOM_MIN, ZOOM_MAX } from "./layout.js";
 import {
@@ -105,6 +105,7 @@ export default function TaskTreeApp() {
   const lastSyncMTime = useRef(0); // file.lastModified as of our last write/read, to spot external edits
   const unsyncedEdits = useRef(false); // in-memory changes made since the last write to / read from the linked file
   const reloadRef = useRef(null); // latest reloadFromFile, for the poller bound once
+  const saveTimer = useRef(null); // armed debounced doc save, so a restore can disarm it
   const syncExportRef = useRef(null); // latest syncExport, so the once-bound Cmd+S handler writes fresh content
   const syncTimer = useRef(null);
   const syncedToastTimer = useRef(null);
@@ -194,6 +195,7 @@ export default function TaskTreeApp() {
         setSaveState("error");
       }
     }, 600);
+    saveTimer.current = t;
     return () => clearTimeout(t);
   }, [doc, activeId]);
 
@@ -1483,7 +1485,12 @@ export default function TaskTreeApp() {
       window.alert(`Restore failed: ${e.message}`);
       return;
     }
+    // disarm the debounced save first: it would otherwise write the pre-restore
+    // doc back over the key we just restored, since project ids are reused.
+    clearTimeout(saveTimer.current);
+    loaded.current = false;
     await restoreSnapshot(window.storage, snap);
+    await clearHandles();
     window.location.reload();
   };
 

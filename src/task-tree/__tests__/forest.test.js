@@ -29,6 +29,12 @@ describe("growTree", () => {
     expect(orphan.leaves.filter((l) => l.shed).length).toBeGreaterThan(0);
   });
 
+  it("skips a fallen leaf that is already back in the subtree", () => {
+    const back = growTree(root, [fallen("a1", ["root", "a"])]);
+    expect(back.size).toBe(3);
+    expect(back.leaves.some((l) => l.shed)).toBe(false);
+  });
+
   it("is deterministic — the same branch always grows the same tree", () => {
     const shed = [fallen("f1", ["root", "a"])];
     expect(growTree(root, shed)).toEqual(growTree(root, shed));

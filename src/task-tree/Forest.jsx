@@ -20,6 +20,7 @@ const LITTER_TONES = ["#C9A227", "#B4863B", "#A9772E", "#8E6B3A", "#C08552", "#9
 const LEAF_D = "M0,0 C-5,-4 -5,-11 0,-16 C5,-11 5,-4 0,0 Z";
 const CARD_H = 320;
 const LITTER_CAP = 200; // blobs actually drawn; the true count is always labelled
+const SHED_CAP = 60; // shed leaves replanted onto one tree; the true count is always labelled
 const BAND_W = 1000;
 const BAND_DROP = 62;
 
@@ -47,9 +48,10 @@ function branchPath(b) {
 }
 
 function TreeCard({ achievement, shed, onReturn }) {
-  const shedKey = shed.map((l) => l.id).join(",");
+  const planted = shed.slice(-SHED_CAP);
+  const shedKey = planted.map((l) => l.id).join(",");
   const { branches, leaves, bbox, size } = useMemo(
-    () => growTree(achievement.tree, shed),
+    () => growTree(achievement.tree, planted),
     [achievement, shedKey] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const gid = `bark-${achievement.id}`;
@@ -107,9 +109,11 @@ function TreeCard({ achievement, shed, onReturn }) {
       </svg>
       <figcaption className="ff-cap">
         <span className="ff-title">{achievement.title || "Untitled branch"}</span>
-        {/* the shed leaves are back on the tree, so `size` already counts them */}
+        {/* the replanted leaves are back on the tree, so `size` counts them;
+            any beyond SHED_CAP aren't drawn but still count here */}
         <span className="ff-meta">
-          🌿 {size} tasks{shed.length ? ` · ${shed.length} of them shed as leaves` : ""} · {when}
+          🌿 {size + (shed.length - planted.length)} tasks
+          {shed.length ? ` · ${shed.length} of them shed as leaves` : ""} · {when}
         </span>
         <div className="ff-cardactions">
           <button className="ff-copy" onClick={copy} title="Copy the completed tasks as markdown">

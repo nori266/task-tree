@@ -32,6 +32,12 @@ export const loadHandle = (projectId) =>
 export const deleteHandle = (projectId) =>
   withStore("readwrite", (s) => s.delete(projectId)).catch(() => {});
 
+/* Drop every stored handle. A backup restore replaces all projects, and ids are
+   reused across backups, so a surviving handle would re-attach the old linked
+   file to whatever project now holds that id. */
+export const clearHandles = () =>
+  withStore("readwrite", (s) => s.clear()).catch(() => {});
+
 // Ensure we may read/write the handle, prompting if needed. Must be called from
 // a user gesture when it would prompt. Returns true when access is granted.
 export async function verifyPermission(handle, write = true) {
