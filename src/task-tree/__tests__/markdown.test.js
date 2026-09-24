@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseMarkdown, toMarkdown, migrateNodes, mergeById } from "../markdown.js";
+import { parseMarkdown, toMarkdown, migrateNodes, mergeById, countNew } from "../markdown.js";
 
 describe("parseMarkdown", () => {
   it("nests by indentation", () => {
@@ -84,6 +84,19 @@ describe("mergeById", () => {
     const existing = [{ id: "x", createdAt: 1, doneAt: null, children: [] }];
     const [n] = mergeById(parsed, existing, 999);
     expect(n.doneAt).toBe(999);
+  });
+});
+
+describe("countNew", () => {
+  it("counts nodes at any depth whose id is not already in the tree", () => {
+    const parsed = parseMarkdown("- Kept ^keep\n  - Added child\n- Added root ^fresh");
+    const existing = [{ id: "keep", children: [] }];
+    expect(countNew(parsed, existing)).toBe(2);
+  });
+  it("is zero when every id is already known", () => {
+    const parsed = parseMarkdown("- A ^a\n  - B ^b");
+    const existing = [{ id: "a", children: [{ id: "b", children: [] }] }];
+    expect(countNew(parsed, existing)).toBe(0);
   });
 });
 

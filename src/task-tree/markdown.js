@@ -158,6 +158,15 @@ export function mergeById(parsed, existing, now = Date.now()) {
   return walk(parsed);
 }
 
+// Nodes in `parsed` whose id isn't anywhere in `existing`, i.e. added externally.
+export function countNew(parsed, existing) {
+  const ids = new Set();
+  const index = (nodes) => { for (const n of nodes) { ids.add(n.id); index(n.children); } };
+  index(existing);
+  const count = (nodes) => nodes.reduce((c, n) => c + (ids.has(n.id) ? 0 : 1) + count(n.children), 0);
+  return count(parsed);
+}
+
 export const SAMPLE_MD = `- Plan the garden 💻
   > Sketch what goes where before buying anything.
   - Measure the plot ✅

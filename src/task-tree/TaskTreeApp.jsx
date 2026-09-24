@@ -3,7 +3,7 @@ import {
   STATUSES, TYPES, setVocab, newNode, updateNode, addChild, removeNode, findNode,
   countNodes, countDone, addDep, removeDep, dropDepsFor, pruneDeps, predictType,
 } from "./model.js";
-import { parseMarkdown, toMarkdown, migrateNodes, mergeById, SAMPLE_MD } from "./markdown.js";
+import { parseMarkdown, toMarkdown, migrateNodes, mergeById, countNew, SAMPLE_MD } from "./markdown.js";
 import { saveHandle, loadHandle, deleteHandle, clearHandles, verifyPermission } from "./fileHandle.js";
 import { buildSnapshot, validateSnapshot, restoreSnapshot } from "./backup.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout, ZOOM_SPEED, ZOOM_MIN, ZOOM_MAX } from "./layout.js";
@@ -18,7 +18,7 @@ import Backlog from "./Backlog.jsx";
 import Linearize from "./Linearize.jsx";
 import ProjectsPanel from "./ProjectsPanel.jsx";
 import {
-  INDEX_KEY, ACTIVE_KEY, VOCAB_KEY, docKey, forestKey, backlogKey, litterKey,
+  INDEX_KEY, ACTIVE_KEY, VOCAB_KEY, docKey, forestKey, backlogKey, litterKey, pullKey,
   newProjectId, migrateLegacy, getRaw, nextProjectColor,
 } from "./projects.js";
 import {
@@ -73,6 +73,7 @@ export default function TaskTreeApp() {
   const [syncFileName, setSyncFileName] = useState(null);
   const [syncedToast, setSyncedToast] = useState(null); // {name, key} — shown on Cmd+S sync
   const [fileChanged, setFileChanged] = useState(false); // linked file edited on disk since we last wrote/read it
+  const [lastPull, setLastPull] = useState(null); // {at, added} of the last reload from the linked file
   const [structureRev, setStructureRev] = useState(0);
   const [size, setSize] = useState({ w: 1000, h: 700 });
   const [canUndo, setCanUndo] = useState(false);
@@ -772,6 +773,8 @@ export default function TaskTreeApp() {
     if (!activeId) return;
     let cancelled = false;
     (async () => {
+      const pull = await getRaw(window.storage, pullKey(activeId));
+      if (!cancelled && pull) setLastPull(JSON.parse(pull));
       const handle = await loadHandle(activeId);
       if (cancelled || !handle) return;
       syncHandle.current = handle;
@@ -850,6 +853,7 @@ export default function TaskTreeApp() {
     setSyncFileName(null);
     setSyncState("idle");
     setFileChanged(false);
+    setLastPull(null);
     setPlanted(null);
     setBacklogged(null);
     setFell(null);
@@ -938,7 +942,7 @@ export default function TaskTreeApp() {
         litter: await rawOf(litterKey(id)),
       };
     }
-    [docKey, forestKey, backlogKey, litterKey].forEach((k) =>
+    [docKey, forestKey, backlogKey, litterKey, pullKey].forEach((k) =>
       window.storage.delete(k(id)).catch(() => {})
     );
     deleteHandle(id);
@@ -1396,8 +1400,12 @@ export default function TaskTreeApp() {
       const file = await handle.getFile();
       const text = await file.text();
       const parsed = migrateNodes(parseMarkdown(text));
+      const added = countNew(parsed, liveState.current.doc?.children || []);
       commit();
       setDoc((d) => ({ ...d, children: pruneDeps(mergeById(parsed, d.children)) }));
+      const pull = { at: Date.now(), added };
+      setLastPull(pull);
+      if (activeId) window.storage.set(pullKey(activeId), JSON.stringify(pull)).catch(() => {});
       lastSyncMTime.current = file.lastModified;
       unsyncedEdits.current = false;
       setFileChanged(false);
@@ -1537,6 +1545,12 @@ export default function TaskTreeApp() {
               {saveState === "saving" && <em> · saving…</em>}
               {saveState === "saved" && <em> · saved</em>}
               {saveState === "error" && <em className="err"> · couldn't save</em>}
+            </span>
+          )}
+          {lastPull && (
+            <span className="tt-progress" title={`Last pulled from “${syncFileName}” on ${new Date(lastPull.at).toLocaleString()}`}>
+              <em>{tab === "tree" && " · "}pulled {new Date(lastPull.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</em>
+              {lastPull.added > 0 && <em> (+{lastPull.added})</em>}
             </span>
           )}
         </div>

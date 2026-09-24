@@ -44,6 +44,7 @@ export const docKey = (id) => keyFor(id, "doc");
 export const forestKey = (id) => keyFor(id, "forest");
 export const backlogKey = (id) => keyFor(id, "backlog");
 export const litterKey = (id) => keyFor(id, "litter");
+export const pullKey = (id) => keyFor(id, "pull");
 
 // window.storage.get throws when a key is absent; treat that as "no value".
 export async function getRaw(storage, key) {
