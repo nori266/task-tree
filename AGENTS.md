@@ -2,10 +2,12 @@
 
 The running app (browser) and you (filesystem) meet at **one linked markdown
 file** — the file the app syncs to via `Ctrl+S` (File System Access API). Edit
-that file and the app pulls your changes in within a second or two, as long as
-the tab is open and the tree has no unsaved in-memory edits. When it does have
-unsaved edits it shows a *changed on disk* toast instead, so nothing is lost —
-apply it with **Reload**, or via **Reload from file** in the Export modal.
+that file and the app merges your changes in within a second or two while the
+tab is open, including edits made while the app was closed. The merge is
+three-way against the file as last synced, so tasks the user added in the app
+and not yet saved survive alongside yours; on a conflicting field the app's
+edit wins. After a page refresh the browser may drop file access, and the app
+shows a *Reconnect* toast until the user clicks it.
 
 Point the CLI at that file, resolved in this order:
 1. `--file <path>` on the command

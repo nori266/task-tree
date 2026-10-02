@@ -175,7 +175,7 @@ export function ExportModal({
   onPickSyncFile,
   onReload,
   canReload,
-  fileChanged,
+  needsAccess,
   syncState,
   syncFileName,
 }) {
@@ -194,7 +194,7 @@ export function ExportModal({
             Syncing to <code>{syncFileName}</code>
             {" · "}
             <button type="button" className="tt-linkbtn" onClick={onPickSyncFile}>change file</button>
-            {fileChanged && <> · <strong>changed on disk</strong></>}
+            {needsAccess && <> · <strong>access needed</strong></>}
           </p>
         )}
         <div className="tt-modal-actions">
