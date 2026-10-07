@@ -74,6 +74,7 @@ export default function TaskTreeApp() {
   const [syncFileName, setSyncFileName] = useState(null);
   const [syncedToast, setSyncedToast] = useState(null); // {name, key} — shown on Cmd+S sync
   const [needsAccess, setNeedsAccess] = useState(false); // linked file needs a permission re-grant before it can be watched
+  const [syncError, setSyncError] = useState(null); // message of the last failed user-initiated sync, shown until dismissed
   const [lastPull, setLastPull] = useState(null); // {at, added} of the last reload from the linked file
   const [structureRev, setStructureRev] = useState(0);
   const [size, setSize] = useState({ w: 1000, h: 700 });
@@ -866,6 +867,7 @@ export default function TaskTreeApp() {
     setSyncFileName(null);
     setSyncState("idle");
     setNeedsAccess(false);
+    setSyncError(null);
     setLastPull(null);
     setPlanted(null);
     setBacklogged(null);
@@ -1340,13 +1342,15 @@ export default function TaskTreeApp() {
   };
 
   // Three-way merge of the file's `text` into the in-memory tree, against the
-  // last-synced base, applied as one undoable step. Returns the merged children
-  // and how many tasks the file added.
-  const mergeFromFile = (text) => {
+  // last-synced base, applied as one undoable step. With no base, a newly
+  // linked file is unioned with the tree; a file linked before bases were
+  // stored is taken as authoritative. Returns the merged children and how many
+  // tasks the file added.
+  const mergeFromFile = (text, opts) => {
     const remote = migrateNodes(parseMarkdown(text));
     const local = liveState.current.doc?.children || [];
     const added = countNew(remote, local);
-    const merged = pruneDeps(syncBase.current || unsyncedEdits.current
+    const merged = pruneDeps(syncBase.current || unsyncedEdits.current || opts?.adopt
       ? mergeTrees(syncBase.current, local, remote)
       : mergeById(remote, local));
     commit();
@@ -1360,6 +1364,26 @@ export default function TaskTreeApp() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (e) { /* textarea remains selectable */ }
+  };
+
+  const failSync = (e) => {
+    setSyncState("error");
+    setSyncError(e?.message || String(e));
+  };
+
+  // Make `handle` the linked file. A different file than before has no common
+  // base with the tree, so its contents get unioned in on the next write/read.
+  const adoptHandle = async (handle) => {
+    const prev = syncHandle.current;
+    const same = prev && (await prev.isSameEntry(handle));
+    if (!same) {
+      syncBase.current = null;
+      lastSyncMTime.current = 0;
+      if (activeId) window.storage.delete(syncBaseKey(activeId)).catch(() => {});
+    }
+    syncHandle.current = handle;
+    setSyncFileName(handle.name);
+    if (activeId) saveHandle(activeId, handle);
   };
 
   // On a successful write, flash the top-bar indicator; when `toast` is set
@@ -1396,27 +1420,26 @@ export default function TaskTreeApp() {
         suggestedName: `${(doc?.title || "tasks").replace(/[^\w.-]+/g, "-")}.md`,
         types: [{ description: "Markdown", accept: { "text/markdown": [".md"] } }],
       });
-      syncHandle.current = handle;
-      setSyncFileName(handle.name);
-      if (activeId) saveHandle(activeId, handle);
-      await writeSyncFile(handle, { ...opts, fresh: true });
+      await adoptHandle(handle);
+      await writeSyncFile(handle, { ...opts, adopt: true });
     } catch (e) {
-      if (e?.name !== "AbortError") setSyncState("error");
+      if (e?.name !== "AbortError") failSync(e);
     }
   };
 
   // Write the tree to the linked file. If the file was edited since we last
-  // synced (CLI/agent), merge that in first so the write doesn't clobber it.
-  // `opts.fresh` marks a newly picked file, whose old contents are replaced.
+  // synced (CLI/agent), or is newly linked and already has tasks, merge that in
+  // first so the write never clobbers it.
   const writeSyncFile = async (handle, opts) => {
     setSyncState("syncing");
     try {
-      if (!(await verifyPermission(handle))) { setSyncState("error"); return; }
+      if (!(await verifyPermission(handle))) throw new Error(`No write access to “${handle.name}”.`);
       setNeedsAccess(false);
       let children = liveState.current.doc?.children || [];
-      if (!opts?.fresh) {
-        const file = await handle.getFile();
-        if (file.lastModified > lastSyncMTime.current) children = mergeFromFile(await file.text()).merged;
+      const file = await handle.getFile();
+      if (file.lastModified > lastSyncMTime.current) {
+        const text = await file.text();
+        if (text.trim()) children = mergeFromFile(text, opts).merged;
       }
       const md = toSyncMd(children);
       const writable = await handle.createWritable();
@@ -1424,9 +1447,10 @@ export default function TaskTreeApp() {
       await writable.close();
       setSyncBase(md, (await handle.getFile()).lastModified);
       unsyncedEdits.current = false;
+      setSyncError(null);
       flashSynced(handle.name, opts?.toast);
     } catch (e) {
-      setSyncState("error");
+      failSync(e);
     }
   };
 
@@ -1441,21 +1465,52 @@ export default function TaskTreeApp() {
       // outside a user gesture is rejected anyway.
       if (opts?.quiet) {
         if ((await handle.queryPermission({ mode: "read" })) !== "granted") return;
-      } else if (!(await verifyPermission(handle))) { setSyncState("error"); return; }
+      } else if (!(await verifyPermission(handle, false))) {
+        throw new Error(`No read access to “${handle.name}”.`);
+      }
       setNeedsAccess(false);
       const file = await handle.getFile();
       const text = await file.text();
-      const { merged, added } = mergeFromFile(text);
+      const { merged, added } = mergeFromFile(text, opts);
       const pull = { at: Date.now(), added };
       setLastPull(pull);
       if (activeId) window.storage.set(pullKey(activeId), JSON.stringify(pull)).catch(() => {});
       setSyncBase(text, file.lastModified);
       // App-side edits the file doesn't have yet still need a Cmd+S.
       unsyncedEdits.current = toSyncMd(merged) !== toSyncMd(migrateNodes(parseMarkdown(text)));
+      if (!opts?.quiet) setSyncError(null);
       flashSynced(handle.name, false);
     } catch (e) {
-      setSyncState("error");
+      if (opts?.quiet) setSyncState("error");
+      else failSync(e);
     }
+  };
+
+  // Toast button after a refresh dropped file access. requestPermission is the
+  // first await so it runs inside the click's user activation; if the browser
+  // still refuses, re-picking the file in an open dialog grants access instead.
+  const reconnect = async () => {
+    const handle = syncHandle.current;
+    if (!handle) return;
+    let granted = false;
+    try {
+      granted = (await handle.requestPermission({ mode: "readwrite" })) === "granted";
+    } catch (e) { /* fall back to re-picking below */ }
+    let adopt = false;
+    if (!granted) {
+      try {
+        const [picked] = await window.showOpenFilePicker({
+          startIn: handle,
+          types: [{ description: "Markdown", accept: { "text/markdown": [".md"] } }],
+        });
+        await adoptHandle(picked);
+        adopt = syncBase.current === null;
+      } catch (e) {
+        if (e?.name !== "AbortError") failSync(e);
+        return;
+      }
+    }
+    await reloadFromFile({ adopt });
   };
 
   // Sync button: write to the already-chosen file, or prompt for one on first use.
@@ -1957,13 +2012,22 @@ export default function TaskTreeApp() {
         )}
 
         {/* the browser dropped file access (e.g. after a page refresh); a click re-grants it */}
-        {needsAccess && !syncedToast && (
+        {needsAccess && !syncError && !syncedToast && (
           <div className="tt-toast" key="needs-access">
             <span className="tt-toast-icon">⟳</span>
             <span className="tt-toast-text">
               Reconnect to “{syncFileName}” to pick up outside edits.
             </span>
-            <button className="tt-toast-undo" onClick={reloadFromFile}>Reconnect</button>
+            <button className="tt-toast-undo" onClick={reconnect}>Reconnect</button>
+          </div>
+        )}
+
+        {/* a user-initiated sync failed; say why instead of failing silently */}
+        {syncError && !syncedToast && (
+          <div className="tt-toast" key="sync-error">
+            <span className="tt-toast-icon">⚠️</span>
+            <span className="tt-toast-text">Sync failed: {syncError}</span>
+            <button className="tt-toast-undo" onClick={() => setSyncError(null)}>Dismiss</button>
           </div>
         )}
 
@@ -2047,7 +2111,7 @@ export default function TaskTreeApp() {
           onClose={() => setModal(null)}
           onSync={syncExport}
           onPickSyncFile={pickSyncFile}
-          onReload={reloadFromFile}
+          onReload={() => reloadFromFile()}
           canReload={!!syncFileName}
           needsAccess={needsAccess}
           syncState={syncState}
