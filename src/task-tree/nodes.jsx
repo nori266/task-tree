@@ -27,7 +27,7 @@ export function DoneTwig({ node, x, y, isDrop, isCursor, isMatch, isDragging, fa
     <g
       data-node={node.id}
       transform={`translate(${x},${y})`}
-      className={`tt-twig ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""}`}
+      className={`tt-twig ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""} ${node.unseen ? "unseen" : ""}`}
       {...handlers}
     >
       <g className="tt-twig-inner">
@@ -36,6 +36,7 @@ export function DoneTwig({ node, x, y, isDrop, isCursor, isMatch, isDragging, fa
         <path d="M0,0 C-3,-3 -3,-8 0,-11 C3,-8 3,-3 0,0 Z" transform="translate(10,-9) rotate(40)" className="tt-twig-leaf" />
         <path d="M0,0 C-3,-3 -3,-8 0,-11 C3,-8 3,-3 0,0 Z" transform="translate(14,8) rotate(130)" className="tt-twig-leaf" />
       </g>
+      {node.unseen && <circle r={23} className="tt-unseen-ring" />}
       {isMatch && <circle r={22} className="tt-search-ring round" />}
       {isCursor && <circle r={20} className="tt-cursor-ring round" />}
       {isDrop && <circle r={21} className="tt-drop-ring" />}
@@ -50,7 +51,7 @@ export function DoneLeaf({ node, x, y, isDrop, isCursor, isMatch, isDragging, fa
     <g
       data-node={node.id}
       transform={`translate(${x},${y}) rotate(90)`}
-      className={`tt-realleaf ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""}`}
+      className={`tt-realleaf ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""} ${node.unseen ? "unseen" : ""}`}
       {...handlers}
     >
       <g className="tt-realleaf-inner">
@@ -59,6 +60,7 @@ export function DoneLeaf({ node, x, y, isDrop, isCursor, isMatch, isDragging, fa
         <path d="M0,10 C-10,2 -10,-10 0,-18 C10,-10 10,2 0,10 Z" className="tt-realleaf-blade" />
         <path d="M0,8 L0,-14 M0,2 Q-4,-1 -6,-5 M0,-2 Q4,-5 6,-9" className="tt-realleaf-vein" />
       </g>
+      {node.unseen && <circle r={23} className="tt-unseen-ring" />}
       {isMatch && <circle r={22} className="tt-search-ring round" />}
       {isCursor && <circle r={20} className="tt-cursor-ring round" />}
       {isDrop && <circle r={21} className="tt-drop-ring" />}
@@ -75,9 +77,10 @@ export function TaskPill({ node, x, y, isSel, isCursor, isMatch, isDone, isLeaf,
     <g
       data-node={node.id}
       transform={`translate(${x - w / 2},${y - PILL_H / 2})`}
-      className={`tt-pill ${isSel ? "sel" : ""} ${isDone ? "done" : ""} ${isLeaf ? "leaf" : ""} ${node.important ? "imp" : ""} ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""}`}
+      className={`tt-pill ${isSel ? "sel" : ""} ${isDone ? "done" : ""} ${isLeaf ? "leaf" : ""} ${node.important ? "imp" : ""} ${isDragging ? "dragging" : ""} ${faded ? "faded" : ""} ${node.unseen ? "unseen" : ""}`}
       {...handlers}
     >
+      {node.unseen && <rect x={-4} y={-4} width={w + 8} height={PILL_H + 8} rx={15} className="tt-unseen-ring" />}
       <rect width={w} height={PILL_H} rx={11} className="tt-pill-bg" />
       {st && (
         <rect width={4} height={PILL_H - 12} x={5} y={6} rx={2} fill={st.color} opacity={isDone ? 0.4 : 0.9} />

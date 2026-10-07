@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { parseMarkdown } from "../markdown.js";
-import { mergeTrees } from "../merge.js";
+import { mergeTrees, markUnseen } from "../merge.js";
 
 const md = (s) => parseMarkdown(s);
 const titles = (nodes) => nodes.map((n) => n.children.length ? [n.title, titles(n.children)] : n.title);
@@ -66,5 +66,17 @@ describe("mergeTrees", () => {
     const local = md("- A ^a\n- Mine ^m");
     const remote = md("- A ^a\n- C ^c");
     expect(titles(mergeTrees(null, local, remote))).toEqual(["A", "Mine", "C"]);
+  });
+});
+
+describe("markUnseen", () => {
+  it("flags only nodes the in-memory tree didn't have, and keeps existing flags", () => {
+    const local = md("- A ^a\n  - A1 ^a1");
+    local[0].children[0].unseen = true;
+    const merged = md("- A ^a\n  - A1 ^a1\n  - New ^n\n    - Deep ^d");
+    merged[0].children[0].unseen = true;
+    const [a] = markUnseen(merged, local);
+    expect([a.unseen, a.children[0].unseen, a.children[1].unseen, a.children[1].children[0].unseen])
+      .toEqual([undefined, true, true, true]);
   });
 });

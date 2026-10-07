@@ -127,3 +127,16 @@ export function mergeTrees(base, local, remote, now = Date.now()) {
   });
   return build(null);
 }
+
+// Flag nodes in `merged` that `local` didn't have, so the app can highlight
+// tasks that arrived from the file until the user reviews them.
+export function markUnseen(merged, local) {
+  const seen = new Set();
+  const index = (nodes) => { for (const n of nodes) { seen.add(n.id); index(n.children || []); } };
+  index(local);
+  const walk = (nodes) => nodes.map((n) => ({
+    ...(seen.has(n.id) ? n : { ...n, unseen: true }),
+    children: walk(n.children || []),
+  }));
+  return walk(merged);
+}

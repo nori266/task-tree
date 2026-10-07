@@ -4,7 +4,7 @@ import {
   countNodes, countDone, addDep, removeDep, dropDepsFor, pruneDeps, predictType,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, mergeById, countNew, SAMPLE_MD } from "./markdown.js";
-import { mergeTrees } from "./merge.js";
+import { mergeTrees, markUnseen } from "./merge.js";
 import { saveHandle, loadHandle, deleteHandle, clearHandles, verifyPermission } from "./fileHandle.js";
 import { buildSnapshot, validateSnapshot, restoreSnapshot } from "./backup.js";
 import { PILL_H, labelOf, pillW, computeDoneBranchIds, computeLayout, ZOOM_SPEED, ZOOM_MIN, ZOOM_MAX } from "./layout.js";
@@ -599,6 +599,17 @@ export default function TaskTreeApp() {
     if (!search.trim()) { setSearchIdx(0); return; }
     if (searchMatchIds.length) gotoMatch(0);
   }, [search]); // eslint-disable-line
+
+  /* Selecting a task (click, keyboard, search) counts as reviewing it, which
+     clears the highlight on tasks that arrived from the linked file. Not an
+     undoable edit: it's view state that happens to live on the node. */
+  useEffect(() => {
+    if (!selectedId) return;
+    setDoc((d) => {
+      if (!d || !findNode(d.children, selectedId)?.unseen) return d;
+      return { ...d, children: updateNode(d.children, selectedId, { unseen: false }) };
+    });
+  }, [selectedId]);
 
   /* ----- pan & zoom ----- */
   useEffect(() => {
@@ -1350,9 +1361,9 @@ export default function TaskTreeApp() {
     const remote = migrateNodes(parseMarkdown(text));
     const local = liveState.current.doc?.children || [];
     const added = countNew(remote, local);
-    const merged = pruneDeps(syncBase.current || unsyncedEdits.current || opts?.adopt
+    const merged = markUnseen(pruneDeps(syncBase.current || unsyncedEdits.current || opts?.adopt
       ? mergeTrees(syncBase.current, local, remote)
-      : mergeById(remote, local));
+      : mergeById(remote, local)), local);
     commit();
     setDoc((d) => ({ ...d, children: merged }));
     bumpStructure();

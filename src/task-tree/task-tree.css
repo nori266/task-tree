@@ -243,6 +243,12 @@
   pointer-events: none;
 }
 .tt-search-ring.round { fill: none; }
+/* task pulled in from the linked file, not yet selected */
+.tt-unseen-ring {
+  fill: rgba(224,122,95,.12); stroke: #E07A5F; stroke-width: 2;
+  pointer-events: none; animation: tt-unseen-pulse 1.8s ease-in-out infinite;
+}
+@keyframes tt-unseen-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
 .tt-pill-emoji { font-size: 13px; }
 .tt-pill-title {
   font-size: 12.5px; font-weight: 500; fill: var(--ink);
