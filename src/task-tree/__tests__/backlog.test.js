@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isStale, sweepBacklog, mergeIntoBacklog, takeFromBacklog, graftIntoTree,
-  countBacklogged, STALE_MS,
+  countBacklogged, findInBacklogByTitle, STALE_MS,
 } from "../backlog.js";
 
 const now = 1_000_000_000_000;
@@ -92,5 +92,24 @@ describe("graftIntoTree", () => {
   it("falls back to top level when no ancestor remains", () => {
     const out = graftIntoTree([{ id: "other", children: [] }], ["gone"], { id: "n", children: [] });
     expect(out.map((n) => n.id)).toEqual(["other", "n"]);
+  });
+});
+
+describe("findInBacklogByTitle", () => {
+  const backlog = [
+    { id: "a", title: "Project", stub: true, children: [
+      { id: "b", title: "Write the Report", children: [] },
+    ] },
+    { id: "c", title: "Call Bob", children: [] },
+  ];
+
+  it("matches ignoring case and surrounding spaces, at any depth", () => {
+    expect(findInBacklogByTitle(backlog, "  write the report ")?.id).toBe("b");
+    expect(findInBacklogByTitle(backlog, "CALL BOB")?.id).toBe("c");
+  });
+
+  it("skips path stubs and empty titles", () => {
+    expect(findInBacklogByTitle(backlog, "project")).toBeNull();
+    expect(findInBacklogByTitle(backlog, "   ")).toBeNull();
   });
 });

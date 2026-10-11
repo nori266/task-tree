@@ -67,7 +67,9 @@ export const newStatusKey = () => `s${Date.now().toString(36)}_${vocabKeyCounter
 
 let idCounter = 1;
 const nid = () => `n${Date.now().toString(36)}_${idCounter++}`;
-export const newNode = (title = "New task", status = null, type = null, important = false) => ({
+export const NEW_TASK_TITLE = "New task";
+
+export const newNode = (title = NEW_TASK_TITLE, status = null, type = null, important = false) => ({
   id: nid(), title, desc: "", status, type, important, createdAt: Date.now(),
   doneAt: status === "done" ? Date.now() : null, blockedBy: [], children: [],
 });

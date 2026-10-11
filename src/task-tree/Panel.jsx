@@ -5,7 +5,7 @@ import { STATUSES, TYPES } from "./model.js";
 
 export default function Panel({
   selected, titleInputRef, confirmDelete, setConfirmDelete,
-  onPatch, onAddChild, onImportChild, onDelete, onClose,
+  onPatch, onTitleDone, onAddChild, onImportChild, onDelete, onClose,
   blockers = [], linking = false, onStartLink, onRemoveDep,
   moveTargets = [], onMoveToProject,
 }) {
@@ -26,6 +26,7 @@ export default function Panel({
                 value={selected.title}
                 onChange={(e) => onPatch({ title: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+                onBlur={onTitleDone}
               />
             </label>
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
-  STATUSES, TYPES, setVocab, newNode, updateNode, addChild, removeNode, findNode,
+  STATUSES, TYPES, setVocab, NEW_TASK_TITLE, newNode, updateNode, mapTree, addChild, removeNode, findNode,
   countNodes, countDone, addDep, removeDep, dropDepsFor, pruneDeps, predictType,
 } from "./model.js";
 import { parseMarkdown, toMarkdown, migrateNodes, mergeById, countNew, SAMPLE_MD } from "./markdown.js";
@@ -24,6 +24,7 @@ import {
 } from "./projects.js";
 import {
   sweepBacklog, mergeIntoBacklog, takeFromBacklog, graftIntoTree, countBacklogged,
+  findInBacklogByTitle,
 } from "./backlog.js";
 import {
   dayIndex, fadedIds as computeFadedIds, collectFallen, applyFall, stampDone, shedUnder,
@@ -50,6 +51,7 @@ export default function TaskTreeApp() {
   const [tab, setTab] = useState("tree"); // 'tree' | 'forest' | 'backlog'
   const [planted, setPlanted] = useState(null); // {trees, key} undo toast
   const [backlogged, setBacklogged] = useState(null); // {count, title, key} toast
+  const [revived, setRevived] = useState(null); // {title, key} toast: a new task pulled its namesake from the Backlog
   const [fell, setFell] = useState(null); // {count, key, snapshot} undo toast for a leaf-fall
   const [falling, setFalling] = useState(null); // {key, ids, leaves} mid-flight, tree not yet reflowed
   const [fallTick, setFallTick] = useState(0); // bumped when a leaf-fall sweep is due
@@ -100,6 +102,8 @@ export default function TaskTreeApp() {
   const celebrationTimer = useRef(null);
   const plantedTimer = useRef(null);
   const backloggedTimer = useRef(null);
+  const revivedTimer = useRef(null);
+  const freshId = useRef(null); // the just-added task, until its title is first committed
   const lastSweepDay = useRef(null); // day index of the last leaf-fall sweep
   const fallTimer = useRef(null);
   const pendingFall = useRef(null); // {ids, fallen} of a leaf-fall still mid-flight
@@ -270,6 +274,28 @@ export default function TaskTreeApp() {
     });
     setTab("tree");
     bumpStructure();
+  };
+
+  /* A just-added task whose title matches a backlogged one is replaced by that
+     task, which comes back (with its subtree) where the new one was placed. */
+  const reviveFromBacklog = (id) => {
+    if (freshId.current !== id) return;
+    const fresh = findNode(doc.children, id);
+    // still the placeholder title: wait for a real one
+    if (fresh && fresh.title.trim().toLowerCase() === NEW_TASK_TITLE.toLowerCase()) return;
+    freshId.current = null;
+    if (!fresh || fresh.children.length) return;
+    const twin = findInBacklogByTitle(backlog, fresh.title);
+    if (!twin) return;
+    const taken = takeFromBacklog(backlog, twin.id, Date.now());
+    commit();
+    setBacklog(taken.children);
+    setDoc((d) => ({ ...d, children: mapTree(d.children, (n) => (n.id === id ? taken.node : n)) }));
+    setSelectedId(taken.node.id);
+    setCursorId(taken.node.id);
+    clearTimeout(revivedTimer.current);
+    setRevived({ title: taken.node.title, key: Date.now() });
+    revivedTimer.current = setTimeout(() => setRevived(null), 6500);
   };
 
   const deleteFromBacklog = (id) => {
@@ -1027,6 +1053,8 @@ export default function TaskTreeApp() {
 
   useEffect(() => () => clearTimeout(deletedTimer.current), []);
   useEffect(() => () => clearTimeout(movedTimer.current), []);
+  useEffect(() => () => clearTimeout(revivedTimer.current), []);
+  useEffect(() => { if (selectedId !== freshId.current) freshId.current = null; }, [selectedId]);
   useEffect(() => () => clearTimeout(syncedToastTimer.current), []);
 
   const handleAddChild = (parentId) => {
@@ -1037,6 +1065,7 @@ export default function TaskTreeApp() {
         ? { ...d, children: [...d.children, child] }
         : { ...d, children: addChild(d.children, parentId, child) }
     );
+    freshId.current = child.id;
     setSelectedId(child.id);
     setCursorId(child.id);
     setConfirmDelete(false);
@@ -2012,8 +2041,19 @@ export default function TaskTreeApp() {
           </div>
         )}
 
+        {/* a new task brought its namesake back from the Backlog */}
+        {revived && !planted && !fell && !backlogged && (
+          <div className="tt-toast" key={revived.key}>
+            <span className="tt-toast-icon">🗂️</span>
+            <span className="tt-toast-text">
+              Brought “{labelOf(revived.title || "Untitled task")}” back from your Backlog.
+            </span>
+            <button className="tt-toast-undo" onClick={() => { setRevived(null); undo(); }}>Undo</button>
+          </div>
+        )}
+
         {/* synced-to-file toast, raised on Cmd+S */}
-        {syncedToast && !planted && !fell && !backlogged && (
+        {syncedToast && !planted && !fell && !backlogged && !revived && (
           <div className="tt-toast" key={syncedToast.key}>
             <span className="tt-toast-icon">✓</span>
             <span className="tt-toast-text">
@@ -2089,6 +2129,7 @@ export default function TaskTreeApp() {
             return { ...d, children };
           });
         }}
+        onTitleDone={() => selected && reviveFromBacklog(selected.id)}
         onAddChild={() => handleAddChild(selected.id)}
         onImportChild={() => { setImportTarget(selected.id); setImportText(""); setModal("import"); }}
         onDelete={() => handleDelete(selected.id)}

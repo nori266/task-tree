@@ -140,6 +140,21 @@ export function graftIntoTree(children, ancestorIds, node) {
   return [...children, node];
 }
 
+const normTitle = (t) => (t ?? "").trim().toLowerCase();
+
+// First backlogged task whose title matches, ignoring case and outer spaces.
+// Path stubs are skipped: they are still in the Tree.
+export function findInBacklogByTitle(nodes, title) {
+  const want = normTitle(title);
+  if (!want) return null;
+  for (const n of nodes) {
+    if (!n.stub && normTitle(n.title) === want) return n;
+    const deeper = findInBacklogByTitle(n.children ?? [], title);
+    if (deeper) return deeper;
+  }
+  return null;
+}
+
 /* ---------- misc ---------- */
 
 // Path stubs aren't backlogged tasks themselves, so they don't count.
