@@ -76,6 +76,7 @@ export default function TaskTreeApp() {
   const [syncFileName, setSyncFileName] = useState(null);
   const [syncedToast, setSyncedToast] = useState(null); // {name, key} — shown on Cmd+S sync
   const [needsAccess, setNeedsAccess] = useState(false); // linked file needs a permission re-grant before it can be watched
+  const [needsRepick, setNeedsRepick] = useState(false); // the browser refused the re-grant; only re-picking the file restores access
   const [syncError, setSyncError] = useState(null); // message of the last failed user-initiated sync, shown until dismissed
   const [lastPull, setLastPull] = useState(null); // {at, added} of the last reload from the linked file
   const [structureRev, setStructureRev] = useState(0);
@@ -904,6 +905,7 @@ export default function TaskTreeApp() {
     setSyncFileName(null);
     setSyncState("idle");
     setNeedsAccess(false);
+    setNeedsRepick(false);
     setSyncError(null);
     setLastPull(null);
     setPlanted(null);
@@ -1526,31 +1528,40 @@ export default function TaskTreeApp() {
     }
   };
 
-  // Toast button after a refresh dropped file access. requestPermission is the
-  // first await so it runs inside the click's user activation; if the browser
-  // still refuses, re-picking the file in an open dialog grants access instead.
+  // Toast button after a refresh dropped file access. requestPermission and
+  // showOpenFilePicker each consume the click's user activation, so one click
+  // can do only one of them: when the browser refuses the permission, the toast
+  // switches to a "Choose file" button and re-picking happens on the next click.
   const reconnect = async () => {
     const handle = syncHandle.current;
     if (!handle) return;
+    if ((await handle.queryPermission({ mode: "readwrite" })) === "denied") return repickSyncFile();
     let granted = false;
     try {
       granted = (await handle.requestPermission({ mode: "readwrite" })) === "granted";
-    } catch (e) { /* fall back to re-picking below */ }
-    let adopt = false;
+    } catch (e) { /* offer re-picking below */ }
     if (!granted) {
-      try {
-        const [picked] = await window.showOpenFilePicker({
-          startIn: handle,
-          types: [{ description: "Markdown", accept: { "text/markdown": [".md"] } }],
-        });
-        await adoptHandle(picked);
-        adopt = syncBase.current === null;
-      } catch (e) {
-        if (e?.name !== "AbortError") failSync(e);
-        return;
-      }
+      setNeedsRepick(true);
+      return;
     }
-    await reloadFromFile({ adopt });
+    await reloadFromFile({ adopt: false });
+  };
+
+  const repickSyncFile = async () => {
+    const handle = syncHandle.current;
+    if (!handle) return;
+    try {
+      const [picked] = await window.showOpenFilePicker({
+        startIn: handle,
+        types: [{ description: "Markdown", accept: { "text/markdown": [".md"] } }],
+      });
+      await adoptHandle(picked);
+    } catch (e) {
+      if (e?.name !== "AbortError") failSync(e);
+      return;
+    }
+    setNeedsRepick(false);
+    await reloadFromFile({ adopt: syncBase.current === null });
   };
 
   // Sync button: write to the already-chosen file, or prompt for one on first use.
@@ -2067,9 +2078,13 @@ export default function TaskTreeApp() {
           <div className="tt-toast" key="needs-access">
             <span className="tt-toast-icon">⟳</span>
             <span className="tt-toast-text">
-              Reconnect to “{syncFileName}” to pick up outside edits.
+              {needsRepick
+                ? <>The browser refused access to “{syncFileName}”. Choose the file again to reconnect.</>
+                : <>Reconnect to “{syncFileName}” to pick up outside edits.</>}
             </span>
-            <button className="tt-toast-undo" onClick={reconnect}>Reconnect</button>
+            {needsRepick
+              ? <button className="tt-toast-undo" onClick={repickSyncFile}>Choose file…</button>
+              : <button className="tt-toast-undo" onClick={reconnect}>Reconnect</button>}
           </div>
         )}
 
