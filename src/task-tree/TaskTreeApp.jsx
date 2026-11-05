@@ -42,6 +42,7 @@ const BUTTERFLY_MIN_SUBNODES = 4;  // smaller finished branches erode, so they g
 const HISTORY_LIMIT = 100;   // undo depth; older snapshots drop off the bottom
 const EDIT_COALESCE_MS = 700; // consecutive text edits to one task fold into one undo step
 const POLL_MS = 1500;        // how often the linked file is checked for external (CLI/agent) edits
+const PERMISSION_TIMEOUT_MS = 4000; // how long Reconnect waits on a permission prompt before offering to re-pick the file
 
 export default function TaskTreeApp() {
   const [doc, setDoc] = useState(null); // {title, children}
@@ -1386,13 +1387,17 @@ export default function TaskTreeApp() {
   // Three-way merge of the file's `text` into the in-memory tree, against the
   // last-synced base, applied as one undoable step. With no base, a newly
   // linked file is unioned with the tree; a file linked before bases were
-  // stored is taken as authoritative. Returns the merged children and how many
-  // tasks the file added.
+  // stored is taken as authoritative. `union` skips the base so every task on
+  // either side is kept: an explicit reload must show what the file holds even
+  // when the base says those tasks were deleted in the app. Returns the merged
+  // children and how many tasks the file added.
   const mergeFromFile = (text, opts) => {
     const remote = migrateNodes(parseMarkdown(text));
     const local = liveState.current.doc?.children || [];
     const added = countNew(remote, local);
-    const merged = markUnseen(pruneDeps(syncBase.current || unsyncedEdits.current || opts?.adopt
+    const merged = markUnseen(pruneDeps(opts?.union
+      ? mergeTrees(null, local, remote)
+      : syncBase.current || unsyncedEdits.current || opts?.adopt
       ? mergeTrees(syncBase.current, local, remote)
       : mergeById(remote, local)), local);
     commit();
@@ -1536,15 +1541,24 @@ export default function TaskTreeApp() {
     const handle = syncHandle.current;
     if (!handle) return;
     if ((await handle.queryPermission({ mode: "readwrite" })) === "denied") return repickSyncFile();
-    let granted = false;
+    // A prompt Chrome tucks into the address bar (quiet permission UI) leaves
+    // requestPermission pending indefinitely, so stop waiting after a while and
+    // offer re-picking; a late grant still reloads.
+    const request = handle.requestPermission({ mode: "readwrite" });
+    request.then((s) => {
+      if (s === "granted" && syncHandle.current === handle) {
+        setNeedsRepick(false);
+        reloadFromFile({ adopt: false });
+      }
+    }, () => {});
+    let state = null;
     try {
-      granted = (await handle.requestPermission({ mode: "readwrite" })) === "granted";
+      state = await Promise.race([
+        request,
+        new Promise((resolve) => setTimeout(() => resolve("timeout"), PERMISSION_TIMEOUT_MS)),
+      ]);
     } catch (e) { /* offer re-picking below */ }
-    if (!granted) {
-      setNeedsRepick(true);
-      return;
-    }
-    await reloadFromFile({ adopt: false });
+    if (state !== "granted") setNeedsRepick(true);
   };
 
   const repickSyncFile = async () => {
@@ -2178,7 +2192,7 @@ export default function TaskTreeApp() {
           onClose={() => setModal(null)}
           onSync={syncExport}
           onPickSyncFile={pickSyncFile}
-          onReload={() => reloadFromFile()}
+          onReload={() => reloadFromFile({ union: true })}
           canReload={!!syncFileName}
           needsAccess={needsAccess}
           syncState={syncState}
