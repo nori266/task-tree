@@ -14,7 +14,7 @@ export default function Linearize({ nodes, onPick }) {
     return (
       <div className="ff-empty">
         Nothing to line up yet. Give a task the status <b>In progress</b>,
-        <b> Will do next</b> or <b>Waiting to start</b> and it — with everything
+        <b> Will do next</b> or <b>Waiting to start</b>, or mark it important, and it — with everything
         under it — will stack up here in the order to tackle it. 📋
       </div>
     );

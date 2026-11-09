@@ -1,9 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { linearize } from "../linearize.js";
 
-const n = (id, status, children = [], blockedBy = []) => ({
-  id, title: id, status, blockedBy, children,
+const n = (id, status, children = [], blockedBy = [], important = false) => ({
+  id, title: id, status, blockedBy, children, important,
 });
+const imp = (id, status, children = []) => n(id, status, children, [], true);
 const ids = (order) => order.map((x) => x.id);
 
 describe("linearize", () => {
@@ -61,5 +62,21 @@ describe("linearize", () => {
       n("b", "inprogress", [], ["a"]),
     ]));
     expect(order.sort()).toEqual(["a", "b"]);
+  });
+
+  it("places important tasks without an active status after the status groups", () => {
+    const order = ids(linearize([
+      imp("q", "question", [n("qc", null)]),
+      imp("i", null),
+      n("w", "waiting"),
+      n("x", "next"),
+      imp("d", "done"),
+    ]));
+    expect(order).toEqual(["x", "w", "qc", "q", "i"]);
+  });
+
+  it("keeps an important task with an active status in its status group", () => {
+    const order = ids(linearize([n("w", "waiting"), imp("p", "inprogress")]));
+    expect(order).toEqual(["p", "w"]);
   });
 });

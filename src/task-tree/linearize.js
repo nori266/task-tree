@@ -1,18 +1,23 @@
 /* Flatten the active part of the tree into a single ordered work stack.
 
    The stack holds every node whose status is one of the three "active" ones
-   (In progress, Will do next, Waiting to start) together with all their
-   descendants, with finished (done) nodes dropped. The order, read top to
+   (In progress, Will do next, Waiting to start), plus every unfinished
+   important node, together with all their descendants, with finished (done)
+   nodes dropped. The order, read top to
    bottom, is a linear extension of two hard rules:
      - a child comes before (above) its parent — you finish the pieces first;
      - a blocker comes before (above) the task it blocks.
    Among the orderings those rules allow, the In-progress group floats to the
-   top, then Will-do-next, then Waiting-to-start; ties fall back to tree order.
+   top, then Will-do-next, then Waiting-to-start, then important nodes without
+   an active status; ties fall back to tree order.
    The grouping is a preference, so a blocker can still be pulled above its
    group when a hard rule demands it. */
 
 const GROUP_RANK = { inprogress: 0, next: 1, waiting: 2 };
+const IMPORTANT_RANK = 3;
 const isActive = (n) => n && n.status in GROUP_RANK;
+const isSeed = (n) => isActive(n) || (n.important && n.status !== "done");
+const seedRank = (n) => (isActive(n) ? GROUP_RANK[n.status] : IMPORTANT_RANK);
 
 export function linearize(children) {
   const nodeById = new Map(); // id → node, in pre-order (Map keeps insertion order)
@@ -27,29 +32,29 @@ export function linearize(children) {
   };
   walk(children || []);
 
-  // Included = every active node and its descendants, minus anything done.
+  // Included = every seed node and its descendants, minus anything done.
   const included = new Set();
   const includeSubtree = (n) => {
     if (n.status !== "done") included.add(n.id);
     (n.children || []).forEach(includeSubtree);
   };
-  for (const n of nodeById.values()) if (isActive(n)) includeSubtree(n);
+  for (const n of nodeById.values()) if (isSeed(n)) includeSubtree(n);
   if (!included.size) return [];
 
-  // Group each included node by the highest-priority active ancestor that owns
+  // Group each included node by the highest-priority seed ancestor that owns
   // it; the first (highest-priority) seed to reach a node wins, matching the
   // "if they are not yet in the stack" dedup in the three-pass description.
   const group = new Map();
   const seedsByPriority = [...nodeById.values()]
-    .filter(isActive)
+    .filter(isSeed)
     .sort((a, b) =>
-      GROUP_RANK[a.status] - GROUP_RANK[b.status] ||
+      seedRank(a) - seedRank(b) ||
       orderIndex.get(a.id) - orderIndex.get(b.id));
   const assign = (n, g) => {
     if (included.has(n.id) && !group.has(n.id)) group.set(n.id, g);
     (n.children || []).forEach((c) => assign(c, g));
   };
-  seedsByPriority.forEach((s) => assign(s, GROUP_RANK[s.status]));
+  seedsByPriority.forEach((s) => assign(s, seedRank(s)));
 
   // Constraint graph: an edge before→after means `before` must sit above
   // `after`. indeg counts unmet prerequisites; dependents lists who to release.
